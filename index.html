@@ -653,6 +653,10 @@
 
         // --- UI Update Function ---
         function updateUI(gameData) {
+            // --- Get player data (needed for modals) ---
+            const myPlayerData = gameData.players[currentUserId];
+            const amIAlive = myPlayerData && myPlayerData.isAlive;
+
             // --- Lobby Section ---
             if (gameData.state === "lobby") {
                 showSection("lobby");
@@ -676,8 +680,8 @@
             // --- Game Section ---
             if (gameData.state !== "lobby") {
                 showSection("game");
-                const myPlayerData = gameData.players[currentUserId];
-                const amIAlive = myPlayerData && myPlayerData.isAlive;
+                // const myPlayerData = gameData.players[currentUserId]; // Moved up
+                // const amIAlive = myPlayerData && myPlayerData.isAlive; // Moved up
                 
                 gameIdDisplay.textContent = `Game ID: ${gameData.gameId}`;
 
@@ -735,42 +739,42 @@
                 gameLog.innerHTML = gameData.log.slice().reverse().map(entry => 
                     `<li class="text-sm text-gray-400">${entry}</li>`
                 ).join("");
+            }
+            
+            // --- Modals (MOVED OUTSIDE) ---
+            
+            // Voting Modal
+            if (gameData.state === "voting" && amIAlive && myPlayerData.vote === null) {
+                votingPlayerButtons.innerHTML = Object.keys(gameData.players)
+                    .filter(id => gameData.players[id].isAlive) // Only show alive players
+                    .map(id => {
+                        const player = gameData.players[id];
+                        const isMe = id === currentUserId;
+                        return `<button data-vote-id="${id}" class="vote-button w-full p-3 rounded-lg text-white font-semibold
+                            ${isMe ? 'bg-gray-600 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'}">
+                            Vote ${player.name} ${isMe ? '(You)' : ''}
+                        </button>`;
+                    }).join("");
+                votingModal.classList.remove("hidden");
+            } else {
+                votingModal.classList.add("hidden");
+            }
+            
+            // Game Over Modal
+            if (gameData.state === "game_over") {
+                gameOverWinner.textContent = `${gameData.winner} Win!`;
+                gameOverSecretWord.textContent = `The Secret Word was: ${gameData.secretWord}`;
                 
-                // --- Modals ---
+                const infiltradoNames = Object.values(gameData.players)
+                    .filter(p => p.role === "Infiltrado")
+                    .map(p => p.name)
+                    .join(", ");
+                gameOverInfiltrados.textContent = `Infiltrados: ${infiltradoNames}`;
                 
-                // Voting Modal
-                if (gameData.state === "voting" && amIAlive && myPlayerData.vote === null) {
-                    votingPlayerButtons.innerHTML = Object.keys(gameData.players)
-                        .filter(id => gameData.players[id].isAlive) // Only show alive players
-                        .map(id => {
-                            const player = gameData.players[id];
-                            const isMe = id === currentUserId;
-                            return `<button data-vote-id="${id}" class="vote-button w-full p-3 rounded-lg text-white font-semibold
-                                ${isMe ? 'bg-gray-600 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'}">
-                                Vote ${player.name} ${isMe ? '(You)' : ''}
-                            </button>`;
-                        }).join("");
-                    votingModal.classList.remove("hidden");
-                } else {
-                    votingModal.classList.add("hidden");
-                }
-                
-                // Game Over Modal
-                if (gameData.state === "game_over") {
-                    gameOverWinner.textContent = `${gameData.winner} Win!`;
-                    gameOverSecretWord.textContent = `The Secret Word was: ${gameData.secretWord}`;
-                    
-                    const infiltradoNames = Object.values(gameData.players)
-                        .filter(p => p.role === "Infiltrado")
-                        .map(p => p.name)
-                        .join(", ");
-                    gameOverInfiltrados.textContent = `Infiltrados: ${infiltradoNames}`;
-                    
-                    playAgainButton.classList.toggle("hidden", !isHost);
-                    gameOverModal.classList.remove("hidden");
-S                } else {
-                    gameOverModal.classList.add("hidden");
-                }
+                playAgainButton.classList.toggle("hidden", !isHost);
+                gameOverModal.classList.remove("hidden");
+            } else {
+                gameOverModal.classList.add("hidden");
             }
         }
         
