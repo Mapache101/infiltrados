@@ -97,7 +97,14 @@
             try {
                 // These are provided by the environment
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'infiltrados-game';
-                const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+                const firebaseConfig = {
+  apiKey: "AIzaSyAG6v0TT9miam83wXOB4aqdqD6qbc5GhPo",
+  authDomain: "infiltrados-game.firebaseapp.com",
+  projectId: "infiltrados-game",
+  storageBucket: "infiltrados-game.firebasestorage.app",
+  messagingSenderId: "742547669169",
+  appId: "1:742547669169:web:68ee3277c5fb077647a290"
+};
                 
                 if (!firebaseConfig.apiKey) {
                     showError("Firebase config is missing. App cannot start.");
