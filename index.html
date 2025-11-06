@@ -35,6 +35,8 @@
         let gameUnsubscribe = null; // To stop listening to game updates
         let localGameData = {}; // Local cache of game state
         let isHost = false;
+        // Moved appId to module scope so all functions can access it
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'infiltrados-game';
 
         // --- DOM Elements ---
         const $ = (selector) => document.querySelector(selector);
@@ -48,6 +50,7 @@
         // Login
         const usernameInput = $("#username-input");
         const setUsernameButton = $("#set-username-button");
+        const loginError = $("#login-error");
 
         // Lobby
         const createGameButton = $("#create-game-button");
@@ -92,19 +95,25 @@
             "Farm", "Factory", "Police Station", "Fire Station", "Post Office"
         ];
 
+        // --- Helper function for correct Firestore path ---
+        function getGameDocRef(gameId) {
+            // This constructs the path required by the security rules:
+            // /artifacts/{appId}/public/data/games/{gameId}
+            return doc(db, "artifacts", appId, "public", "data", "games", gameId);
+        }
+
         // --- Firebase Initialization ---
         async function initFirebase() {
             try {
-                // These are provided by the environment
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'infiltrados-game';
+                // Your config is correctly placed here!
                 const firebaseConfig = {
-  apiKey: "AIzaSyAG6v0TT9miam83wXOB4aqdqD6qbc5GhPo",
-  authDomain: "infiltrados-game.firebaseapp.com",
-  projectId: "infiltrados-game",
-  storageBucket: "infiltrados-game.firebasestorage.app",
-  messagingSenderId: "742547669169",
-  appId: "1:742547669169:web:68ee3277c5fb077647a290"
-};
+                    apiKey: "AIzaSyAG6v0TT9miam83wXOB4aqdqD6qbc5GhPo",
+                    authDomain: "infiltrados-game.firebaseapp.com",
+                    projectId: "infiltrados-game",
+                    storageBucket: "infiltrados-game.firebasestorage.app",
+                    messagingSenderId: "742547669169",
+                    appId: "1:742547669169:web:68ee3277c5fb077647a290"
+                };
                 
                 if (!firebaseConfig.apiKey) {
                     showError("Firebase config is missing. App cannot start.");
@@ -167,6 +176,7 @@
         }
 
         function handleUsername() {
+            loginError.textContent = ""; // Clear previous error
             const username = usernameInput.value.trim();
             if (username.length >= 2) {
                 currentUsername = username;
@@ -176,7 +186,7 @@
                 // Now that we have a username, try init Firebase
                 initFirebase();
             } else {
-                alert("Please enter a name (min 2 chars).");
+                loginError.textContent = "Please enter a name (min 2 chars)."; // <-- Better error
             }
         }
 
@@ -216,7 +226,8 @@
             };
 
             try {
-                const gameRef = doc(db, "games", gameId);
+                // Use the correct Firestore path
+                const gameRef = getGameDocRef(gameId); // <-- FIX
                 await setDoc(gameRef, gameDoc);
                 console.log("Game created with ID:", gameId);
                 await subscribeToGame(gameId);
@@ -232,7 +243,7 @@
             const gameId = gameIdInput.value.trim().toUpperCase();
             if (!gameId) return showError("Please enter a Game ID.");
 
-            const gameRef = doc(db, "games", gameId);
+            const gameRef = getGameDocRef(gameId); // <-- FIX
             const gameSnap = await getDoc(gameRef);
 
             if (!gameSnap.exists()) {
@@ -263,7 +274,7 @@
                 };
                 
                 try {
-                    await updateDoc(gameRef, {
+                    await updateDoc(gameRef, { // gameRef is already correct
                         [playerKey]: newPlayer,
                         log: arrayUnion(`${currentUsername} joined the lobby.`)
                     });
@@ -284,7 +295,8 @@
                 gameUnsubscribe();
             }
             
-            gameUnsubscribe = onSnapshot(doc(db, "games", gameId), (docSnap) => {
+            const gameRef = getGameDocRef(gameId); // <-- FIX
+            gameUnsubscribe = onSnapshot(gameRef, (docSnap) => {
                 if (!docSnap.exists()) {
                     showError("Game not found or was deleted.");
                     leaveGame();
@@ -362,7 +374,8 @@
 
             // --- Update Game Doc ---
             try {
-                await updateDoc(doc(db, "games", currentGameId), {
+                const gameRef = getGameDocRef(currentGameId); // <-- FIX
+                await updateDoc(gameRef, {
                     state: "word_round",
                     players: newPlayers,
                     secretWord: secretWord,
@@ -411,7 +424,8 @@
             try {
                 // This update is NOT the one that triggers voting.
                 // The host client will see this update and trigger voting if needed.
-                await updateDoc(doc(db, "games", currentGameId), {
+                const gameRef = getGameDocRef(currentGameId); // <-- FIX
+                await updateDoc(gameRef, {
                     state: nextState,
                     turn: nextTurn,
                     round: nextRound,
@@ -461,7 +475,8 @@
             });
             
             try {
-                await updateDoc(doc(db, "games", currentGameId), {
+                const gameRef = getGameDocRef(currentGameId); // <-- FIX
+                await updateDoc(gameRef, {
                     ...playerUpdates,
                     state: "voting",
                     turn: null, // No one's turn to speak
@@ -481,7 +496,8 @@
             votingModal.classList.add("hidden");
             
             try {
-                await updateDoc(doc(db, "games", currentGameId), {
+                const gameRef = getGameDocRef(currentGameId); // <-- FIX
+                await updateDoc(gameRef, {
                     [`players.${currentUserId}.vote`]: votedPlayerId
                 });
             } catch (error) {
@@ -591,7 +607,8 @@
             const nextTurnPlayer = findNextAlivePlayer(eliminatedPlayerId, false, gameData.turn);
 
             try {
-                await updateDoc(doc(db, "games", currentGameId), {
+                const gameRef = getGameDocRef(currentGameId); // <-- FIX
+                await updateDoc(gameRef, {
                     [`players.${eliminatedPlayerId}.isAlive`]: false,
                     state: nextState,
                     winner: winner,
@@ -617,7 +634,8 @@
             });
             
             try {
-                 await updateDoc(doc(db, "games", currentGameId), {
+                 const gameRef = getGameDocRef(currentGameId); // <-- FIX
+                 await updateDoc(gameRef, {
                     state: "lobby",
                     players: newPlayers,
                     secretWord: "",
@@ -750,7 +768,7 @@
                     
                     playAgainButton.classList.toggle("hidden", !isHost);
                     gameOverModal.classList.remove("hidden");
-                } else {
+S                } else {
                     gameOverModal.classList.add("hidden");
                 }
             }
@@ -825,7 +843,8 @@
                         const key = e.target.dataset.setting;
                         const value = parseInt(e.target.value);
                         try {
-                            await updateDoc(doc(db, "games", currentGameId), {
+                            const gameRef = getGameDocRef(currentGameId); // <-- FIX
+                            await updateDoc(gameRef, {
                                 [`settings.${key}`]: value
                             });
                         } catch (error) {
@@ -850,6 +869,8 @@
                 <button id="set-username-button" class="w-full p-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-bold transition-colors">
                     Join
                 </button>
+                <!-- Added a small error display area -->
+                <p id="login-error" class="text-red-400 text-sm text-center h-4"></p>
             </div>
         </div>
     </section>
