@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-900">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infiltrados Online</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Firebase JS SDKs -->
+    <script type="module">
+        // --- Firebase Imports ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInAnonymously, 
+            onAuthStateChanged,
+            signInWithCustomToken
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            setDoc, 
+            getDoc, 
+            onSnapshot, 
+            updateDoc,
+            arrayUnion,
+            setLogLevel
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- App State ---
+        let db, auth, app;
+        let currentUserId = null;
+        let currentUsername = "Player";
+        let currentGameId = null;
+        let gameUnsubscribe = null; // To stop listening to game updates
+        let localGameData = {}; // Local cache of game state
+        let isHost = false;
+
+        // --- DOM Elements ---
+        const $ = (selector) => document.querySelector(selector);
+        const $$ = (selector) => document.querySelectorAll(selector);
+
+        // Page Sections
+        const loginSection = $("#login-section");
+        const lobbySection = $("#lobby-section");
+        const gameSection = $("#game-section");
+        
+        // Login
+        const usernameInput = $("#username-input");
+        const setUsernameButton = $("#set-username-button");
+
+        // Lobby
+        const createGameButton = $("#create-game-button");
+        const joinGameButton = $("#join-game-button");
+        const gameIdInput = $("#game-id-input");
+        const lobbyGameIdDisplay = $("#lobby-game-id");
+        const lobbyPlayerList = $("#lobby-player-list");
+        const startGameButton = $("#start-game-button");
+
+        // Game Settings (Lobby)
+        const totalPlayersSelect = $("#total-players-select");
+        const infiltradosSelect = $("#infiltrados-select");
+        const roundsBeforeVoteSelect = $("#rounds-before-vote-select");
+        
+        // Game
+        const gameInfoRole = $("#game-info-role");
+        const gameInfoWord = $("#game-info-word");
+        const gameStatus = $("#game-status");
+        const gameWordList = $("#game-word-list");
+        const gamePlayerList = $("#game-player-list");
+        const gameLog = $("#game-log");
+        const wordInputContainer = $("#word-input-container");
+        const wordInput = $("#word-input");
+        const submitWordButton = $("#submit-word-button");
+        const gameIdDisplay = $("#game-id-display");
+
+        // Modals
+        const votingModal = $("#voting-modal");
+        const votingPlayerButtons = $("#voting-player-buttons");
+        const gameOverModal = $("#game-over-modal");
+        const gameOverWinner = $("#game-over-winner");
+        const gameOverSecretWord = $("#game-over-secret-word");
+        const gameOverInfiltrados = $("#game-over-infiltrados");
+        const leaveGameButton = $("#leave-game-button");
+        const playAgainButton = $("#play-again-button");
+
+        // --- Secret Word List ---
+        const SECRET_WORDS = [
+            "Hospital", "School", "Restaurant", "Airport", "Museum", "Beach",
+            "Mountain", "Forest", "Office", "Supermarket", "Pharmacy", "Library",
+            "Park", "Zoo", "Aquarium", "Cinema", "Theater", "Gym", "Stadium",
+            "Farm", "Factory", "Police Station", "Fire Station", "Post Office"
+        ];
+
+        // --- Firebase Initialization ---
+        async function initFirebase() {
+            try {
+                // These are provided by the environment
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'infiltrados-game';
+                const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+                
+                if (!firebaseConfig.apiKey) {
+                    showError("Firebase config is missing. App cannot start.");
+                    return;
+                }
+
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                setLogLevel('debug'); // Enable verbose logging for Firestore
+
+                // --- Auth Handling ---
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        currentUserId = user.uid;
+                        console.log("User signed in:", currentUserId);
+                        loginSection.classList.add("hidden");
+                        lobbySection.classList.remove("hidden");
+                    } else {
+                        // No user, try to sign in
+                        try {
+                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                                await signInWithCustomToken(auth, __initial_auth_token);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                        } catch (authError) {
+                            console.error("Anonymous sign-in failed:", authError);
+                            showError("Failed to connect. Please refresh.");
+                        }
+                    }
+                });
+
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+                showError("Fatal Error: Could not initialize app. Check console.");
+            }
+        }
+
+        // --- UI State Management ---
+        function showSection(section) {
+            [loginSection, lobbySection, gameSection].forEach(s => s.classList.add("hidden"));
+            if (section === "login") loginSection.classList.remove("hidden");
+            if (section === "lobby") lobbySection.classList.remove("hidden");
+            if (section === "game") gameSection.classList.remove("hidden");
+        }
+
+        function showError(message) {
+            // In a real app, use a modal. For now, console.
+            console.error("ERROR:", message);
+            gameStatus.textContent = `Error: ${message}`;
+            gameStatus.classList.add("text-red-400");
+        }
+
+        // --- Game Logic ---
+
+        // Generate a random 6-char game ID
+        function generateGameId() {
+            return Math.random().toString(36).substring(2, 8).toUpperCase();
+        }
+
+        function handleUsername() {
+            const username = usernameInput.value.trim();
+            if (username.length >= 2) {
+                currentUsername = username;
+                usernameInput.disabled = true;
+                setUsernameButton.textContent = "Welcome!";
+                setUsernameButton.disabled = true;
+                // Now that we have a username, try init Firebase
+                initFirebase();
+            } else {
+                alert("Please enter a name (min 2 chars).");
+            }
+        }
+
+        async function createGame() {
+            if (!currentUserId) return showError("Not authenticated.");
+
+            const gameId = generateGameId();
+            currentGameId = gameId;
+            isHost = true;
+
+            const settings = {
+                totalPlayers: parseInt(totalPlayersSelect.value),
+                infiltradosCount: parseInt(infiltradosSelect.value),
+                roundsBeforeVote: parseInt(roundsBeforeVoteSelect.value),
+            };
+
+            const gameDoc = {
+                gameId: gameId,
+                hostId: currentUserId,
+                state: "lobby", // lobby, word_round, voting, game_over
+                settings: settings,
+                players: {
+                    [currentUserId]: {
+                        name: currentUsername,
+                        isAlive: true,
+                        role: null,
+                        vote: null
+                    }
+                },
+                secretWord: "",
+                turn: null, // playerId of current speaker
+                round: 1, // Current word round (1, 2, 3...)
+                gameTurn: 1, // Current vote cycle (1, 2, ...)
+                words: [], // { player: playerId, name: string, word: string, round: int }
+                log: [`Game created by ${currentUsername}`],
+                winner: null
+            };
+
+            try {
+                const gameRef = doc(db, "games", gameId);
+                await setDoc(gameRef, gameDoc);
+                console.log("Game created with ID:", gameId);
+                await subscribeToGame(gameId);
+            } catch (error) {
+                console.error("Error creating game:", error);
+                showError("Could not create game.");
+            }
+        }
+
+        async function joinGame() {
+            if (!currentUserId) return showError("Not authenticated.");
+
+            const gameId = gameIdInput.value.trim().toUpperCase();
+            if (!gameId) return showError("Please enter a Game ID.");
+
+            const gameRef = doc(db, "games", gameId);
+            const gameSnap = await getDoc(gameRef);
+
+            if (!gameSnap.exists()) {
+                return showError("Game not found.");
+            }
+
+            const gameData = gameSnap.data();
+            
+            if (gameData.state !== "lobby") {
+                return showError("Game has already started.");
+            }
+
+            if (Object.keys(gameData.players).length >= gameData.settings.totalPlayers) {
+                return showError("Game is full.");
+            }
+            
+            if (gameData.players[currentUserId]) {
+                 // Player is already in, just subscribe
+                 console.log("Rejoining lobby...");
+            } else {
+                // Add new player to the game
+                const playerKey = `players.${currentUserId}`;
+                const newPlayer = {
+                    name: currentUsername,
+                    isAlive: true,
+                    role: null,
+                    vote: null
+                };
+                
+                try {
+                    await updateDoc(gameRef, {
+                        [playerKey]: newPlayer,
+                        log: arrayUnion(`${currentUsername} joined the lobby.`)
+                    });
+                    console.log("Joined game:", gameId);
+                } catch (error) {
+                    console.error("Error joining game:", error);
+                    return showError("Could not join game.");
+                }
+            }
+
+            currentGameId = gameId;
+            isHost = (gameData.hostId === currentUserId);
+            await subscribeToGame(gameId);
+        }
+
+        async function subscribeToGame(gameId) {
+            if (gameUnsubscribe) {
+                gameUnsubscribe();
+            }
+            
+            gameUnsubscribe = onSnapshot(doc(db, "games", gameId), (docSnap) => {
+                if (!docSnap.exists()) {
+                    showError("Game not found or was deleted.");
+                    leaveGame();
+                    return;
+                }
+
+                const gameData = docSnap.data();
+                localGameData = gameData; // Cache game data
+                updateUI(gameData);
+
+                // --- Host-Only Logic ---
+                // This logic runs on the host's client to manage game state transitions.
+                if (isHost) {
+                    if (gameData.state === "voting" && didAllAlivePlayersVote(gameData)) {
+                        // All votes are in, tally them!
+                        tallyVotes(gameData);
+                    }
+                    // Check for word round -> voting transition
+                    if (gameData.state === "word_round" && shouldRoundEnd(gameData)) {
+                        startVoting(gameData);
+                    }
+                }
+
+            }, (error) => {
+                console.error("Snapshot error:", error);
+                showError("Connection to game lost.");
+            });
+        }
+
+        function leaveGame() {
+            if (gameUnsubscribe) {
+                gameUnsubscribe();
+                gameUnsubscribe = null;
+            }
+            currentGameId = null;
+            isHost = false;
+            localGameData = {};
+            showSection("lobby");
+            lobbyGameIdDisplay.textContent = "";
+            lobbyPlayerList.innerHTML = "";
+            gameIdInput.value = "";
+        }
+
+        async function startGame() {
+            if (!isHost || !currentGameId) return;
+
+            const gameData = localGameData;
+            const playerIds = Object.keys(gameData.players);
+
+            // Check if player count matches setting
+            if (playerIds.length !== gameData.settings.totalPlayers) {
+                return showError(`Waiting for ${gameData.settings.totalPlayers} players. Currently have ${playerIds.length}.`);
+            }
+            
+            // --- Assign Roles ---
+            const { infiltradosCount } = gameData.settings;
+            const newPlayers = { ...gameData.players };
+            const shuffledPlayerIds = playerIds.sort(() => 0.5 - Math.random());
+            
+            const infiltradoIds = [];
+            
+            for (let i = 0; i < shuffledPlayerIds.length; i++) {
+                const id = shuffledPlayerIds[i];
+                if (i < infiltradosCount) {
+                    newPlayers[id].role = "Infiltrado";
+                    infiltradoIds.push(newPlayers[id].name); // For the log
+                } else {
+                    newPlayers[id].role = "Regular";
+                }
+            }
+
+            // --- Pick Word & Start Player ---
+            const secretWord = SECRET_WORDS[Math.floor(Math.random() * SECRET_WORDS.length)];
+            const startPlayerId = shuffledPlayerIds[Math.floor(Math.random() * shuffledPlayerIds.length)];
+
+            // --- Update Game Doc ---
+            try {
+                await updateDoc(doc(db, "games", currentGameId), {
+                    state: "word_round",
+                    players: newPlayers,
+                    secretWord: secretWord,
+                    turn: startPlayerId,
+                    round: 1,
+                    gameTurn: 1,
+                    words: [],
+                    log: arrayUnion("Game started! Roles assigned. It's time to speak.")
+                    // Note: In a real app, infiltradoIds shouldn't be public.
+                    // For this game, we'll reveal them at the end.
+                });
+            } catch (error) {
+                console.error("Error starting game:", error);
+                showError("Could not start game.");
+            }
+        }
+        
+        // --- In-Game Actions ---
+
+        async function submitWord() {
+            const word = wordInput.value.trim();
+            if (word.length < 2 || word.includes(" ")) {
+                return showError("Please enter a single, valid word.");
+            }
+            
+            if (localGameData.turn !== currentUserId) {
+                return showError("It's not your turn!");
+            }
+
+            const { players, round, settings, gameTurn } = localGameData;
+            const totalAlive = Object.values(players).filter(p => p.isAlive).length;
+            const wordsThisRound = localGameData.words.filter(w => w.gameTurn === gameTurn && w.round === round).length;
+
+            const nextPlayer = findNextAlivePlayer(currentUserId);
+            let nextRound = round;
+            let nextState = "word_round";
+            let nextTurn = nextPlayer;
+            
+            // Check if this word is the last word of the round
+            if (wordsThisRound + 1 === totalAlive) {
+                nextRound = round + 1;
+                // Start next round with the same player who started this one (or first alive)
+                nextTurn = findNextAlivePlayer(nextPlayer, true, localGameData.turn); 
+            }
+
+            try {
+                // This update is NOT the one that triggers voting.
+                // The host client will see this update and trigger voting if needed.
+                await updateDoc(doc(db, "games", currentGameId), {
+                    state: nextState,
+                    turn: nextTurn,
+                    round: nextRound,
+                    words: arrayUnion({
+                        player: currentUserId,
+                        name: players[currentUserId].name,
+                        word: word,
+                        round: round,
+                        gameTurn: gameTurn
+                    })
+                });
+                wordInput.value = "";
+            } catch (error) {
+                console.error("Error submitting word:", error);
+                showError("Could not submit word.");
+            }
+        }
+        
+        // Host-only check
+        function shouldRoundEnd(gameData) {
+            const { players, round, settings, gameTurn, words } = gameData;
+            
+            // Are we on a voting round? (e.g., Round 2, 4, 6)
+            if (round > 1 && (round - 1) % settings.roundsBeforeVote === 0) {
+                 const totalAlive = Object.values(players).filter(p => p.isAlive).length;
+                 // Have all players spoken in the *previous* round?
+                 // (e.g., we are on Round 3, but this check triggers *after* Round 2 ends)
+                 // This means `round` is now 3, `round-1` is 2.
+                 const wordsInLastRound = words.filter(w => w.gameTurn === gameTurn && w.round === (round - 1)).length;
+                 
+                 if (wordsInLastRound === totalAlive) {
+                    // Yes, the voting round is complete. Time to vote.
+                    return true;
+                 }
+            }
+            return false;
+        }
+
+        // Host-only action
+        async function startVoting(gameData) {
+            // Reset all player votes to null
+            const playerUpdates = {};
+            Object.keys(gameData.players).forEach(id => {
+                if (gameData.players[id].isAlive) {
+                    playerUpdates[`players.${id}.vote`] = null;
+                }
+            });
+            
+            try {
+                await updateDoc(doc(db, "games", currentGameId), {
+                    ...playerUpdates,
+                    state: "voting",
+                    turn: null, // No one's turn to speak
+                    log: arrayUnion(`--- Time to Vote (Turn ${gameData.gameTurn}) ---`)
+                });
+            } catch (error) {
+                console.error("Error starting vote:", error);
+            }
+        }
+
+        async function submitVote(votedPlayerId) {
+            if (localGameData.state !== "voting" || !localGameData.players[currentUserId].isAlive) {
+                return showError("You can't vote right now.");
+            }
+            
+            // Optimistic UI update
+            votingModal.classList.add("hidden");
+            
+            try {
+                await updateDoc(doc(db, "games", currentGameId), {
+                    [`players.${currentUserId}.vote`]: votedPlayerId
+                });
+            } catch (error) {
+                console.error("Error submitting vote:", error);
+            }
+        }
+
+        // Host-only check
+        function didAllAlivePlayersVote(gameData) {
+            return Object.values(gameData.players).every(p => !p.isAlive || p.vote !== null);
+        }
+
+        // Host-only action
+        async function tallyVotes(gameData) {
+            const votes = {};
+            let tiedPlayers = [];
+            let maxVotes = 0;
+            
+            // Count votes
+            Object.values(gameData.players).forEach(p => {
+                if (p.isAlive && p.vote) {
+                    votes[p.vote] = (votes[p.vote] || 0) + 1;
+                }
+            });
+
+            // Find highest vote count
+            for (const playerId in votes) {
+                if (votes[playerId] > maxVotes) {
+                    maxVotes = votes[playerId];
+                }
+            }
+
+            // Find all players with that count
+            for (const playerId in votes) {
+                if (votes[playerId] === maxVotes) {
+                    tiedPlayers.push(playerId);
+                }
+            }
+            
+            let eliminatedPlayerId;
+            let logMessage;
+
+            if (tiedPlayers.length === 0) {
+                 // This can happen if only one person is alive, but win check should catch it
+                 // Or if no one votes? For simplicity, we'll just pick a random alive player
+                 console.warn("No votes cast? Defaulting to random elim.");
+                 const alivePlayers = Object.keys(gameData.players).filter(id => gameData.players[id].isAlive);
+                 eliminatedPlayerId = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
+                 logMessage = "No votes were cast! By random choice,";
+                 
+            } else if (tiedPlayers.length === 1) {
+                // Clear winner
+                eliminatedPlayerId = tiedPlayers[0];
+                logMessage = "The votes are in!";
+            } else {
+                // Tie-breaker
+                eliminatedPlayerId = tiedPlayers[Math.floor(Math.random() * tiedPlayers.length)];
+                logMessage = `A tie! By random choice,`;
+            }
+
+            const eliminatedPlayer = gameData.players[eliminatedPlayerId];
+            logMessage += ` ${eliminatedPlayer.name} is eliminated.`;
+            const revealMessage = `${eliminatedPlayer.name} was... an ${eliminatedPlayer.role}!`;
+
+            // --- Check Win Conditions ---
+            let regularsAlive = 0;
+            let infiltradosAlive = 0;
+            
+            Object.values(gameData.players).forEach(p => {
+                if (p.isAlive) {
+                    if (p.id === eliminatedPlayerId) return; // Don't count them
+                    if (p.role === "Regular") regularsAlive++;
+                    if (p.role === "Infiltrado") infiltradosAlive++;
+                }
+            });
+            // Final count after this elimination
+            if (eliminatedPlayer.role === "Regular") regularsAlive--;
+            if (eliminatedPlayer.role === "Infiltrado") infiltradosAlive--;
+
+            // We need the counts *after* this player is removed
+            const finalPlayerCounts = { ...gameData.players };
+            finalPlayerCounts[eliminatedPlayerId].isAlive = false;
+            
+            let finalRegulars = 0;
+            let finalInfiltrados = 0;
+            Object.values(finalPlayerCounts).forEach(p => {
+                if (p.isAlive) {
+                    if (p.role === "Regular") finalRegulars++;
+                    if (p.role === "Infiltrado") finalInfiltrados++;
+                }
+            });
+            
+            let nextState = "word_round";
+            let winner = null;
+            
+            if (finalInfiltrados === 0) {
+                nextState = "game_over";
+                winner = "Regulars";
+                logMessage = "The last Infiltrado is out!";
+            } else if (finalInfiltrados >= finalRegulars) {
+                nextState = "game_over";
+                winner = "Infiltrados";
+                logMessage = "The Infiltrados can no longer be outvoted!";
+            }
+
+            // Find next player to start the new round
+            const nextTurnPlayer = findNextAlivePlayer(eliminatedPlayerId, false, gameData.turn);
+
+            try {
+                await updateDoc(doc(db, "games", currentGameId), {
+                    [`players.${eliminatedPlayerId}.isAlive`]: false,
+                    state: nextState,
+                    winner: winner,
+                    turn: nextTurnPlayer,
+                    gameTurn: gameData.gameTurn + 1,
+                    log: arrayUnion(logMessage, revealMessage)
+                });
+
+            } catch (error) {
+                console.error("Error in tallyVotes:", error);
+            }
+        }
+        
+        async function playAgain() {
+            if (!isHost) return;
+            
+            // Reset game to lobby state, keeping players
+            const newPlayers = { ...localGameData.players };
+            Object.keys(newPlayers).forEach(id => {
+                newPlayers[id].isAlive = true;
+                newPlayers[id].role = null;
+                newPlayers[id].vote = null;
+            });
+            
+            try {
+                 await updateDoc(doc(db, "games", currentGameId), {
+                    state: "lobby",
+                    players: newPlayers,
+                    secretWord: "",
+                    turn: null,
+                    round: 1,
+                    gameTurn: 1,
+                    words: [],
+                    log: ["Host started a new game!"],
+                    winner: null
+                 });
+            } catch(error) {
+                console.error("Error playing again:", error);
+            }
+        }
+
+        // --- UI Update Function ---
+        function updateUI(gameData) {
+            // --- Lobby Section ---
+            if (gameData.state === "lobby") {
+                showSection("lobby");
+                lobbyGameIdDisplay.textContent = `Game ID: ${gameData.gameId}`;
+                
+                const playerNames = Object.values(gameData.players).map(p => p.name);
+                lobbyPlayerList.innerHTML = playerNames.map(name => 
+                    `<li class="bg-gray-700 p-2 rounded">${name}</li>`
+                ).join("");
+                
+                // Host controls
+                startGameButton.classList.toggle("hidden", !isHost);
+                $$(".host-setting").forEach(el => el.disabled = !isHost);
+                if (isHost) {
+                    totalPlayersSelect.value = gameData.settings.totalPlayers;
+                    infiltradosSelect.value = gameData.settings.infiltradosCount;
+                    roundsBeforeVoteSelect.value = gameData.settings.roundsBeforeVote;
+                }
+            }
+            
+            // --- Game Section ---
+            if (gameData.state !== "lobby") {
+                showSection("game");
+                const myPlayerData = gameData.players[currentUserId];
+                const amIAlive = myPlayerData && myPlayerData.isAlive;
+                
+                gameIdDisplay.textContent = `Game ID: ${gameData.gameId}`;
+
+                // My Info
+                if (myPlayerData) {
+                    gameInfoRole.textContent = myPlayerData.role || "Role not assigned";
+                    gameInfoRole.className = myPlayerData.role === "Infiltrado" ? "text-red-400 font-bold" : "text-green-400 font-bold";
+                    
+                    if (myPlayerData.role === "Regular") {
+                        gameInfoWord.textContent = `Word: ${gameData.secretWord}`;
+                        gameInfoWord.classList.remove("hidden");
+                    } else if (myPlayerData.role === "Infiltrado") {
+                        gameInfoWord.textContent = "Blend in! Guess the word.";
+                        gameInfoWord.classList.remove("hidden");
+                    } else {
+                        gameInfoWord.classList.add("hidden");
+                    }
+                }
+                
+                // Game Status
+                let statusText = "";
+                if (gameData.state === "word_round") {
+                    const turnPlayerName = gameData.players[gameData.turn]?.name || "Someone";
+                    statusText = `Round ${gameData.round}: Waiting for ${turnPlayerName} to speak.`;
+                } else if (gameData.state === "voting") {
+                    statusText = `Time to vote! (Turn ${gameData.gameTurn})`;
+                } else if (gameData.state === "game_over") {
+                    statusText = `Game Over! ${gameData.winner} win!`;
+                }
+                gameStatus.textContent = statusText;
+
+                // Word Input
+                const isMyTurn = gameData.state === "word_round" && gameData.turn === currentUserId;
+                wordInputContainer.classList.toggle("hidden", !isMyTurn || !amIAlive);
+
+                // Word List
+                gameWordList.innerHTML = gameData.words.map(w => 
+                    `<li class="p-2 bg-gray-700 rounded-lg">
+                        <span class="font-bold text-indigo-300">${w.name} (R${w.round}):</span>
+                        <span class="ml-2 text-white">${w.word}</span>
+                    </li>`
+                ).join("");
+                // Auto-scroll word list
+                gameWordList.scrollTop = gameWordList.scrollHeight;
+                
+                // Player List
+                gamePlayerList.innerHTML = Object.values(gameData.players).map(p => 
+                    `<li class="p-2 rounded ${p.isAlive ? 'bg-gray-600' : 'bg-gray-800 text-gray-500 line-through'}">
+                        ${p.name}
+                        ${p.isAlive ? '' : ' (Eliminated)'}
+                    </li>`
+                ).join("");
+                
+                // Game Log
+                gameLog.innerHTML = gameData.log.slice().reverse().map(entry => 
+                    `<li class="text-sm text-gray-400">${entry}</li>`
+                ).join("");
+                
+                // --- Modals ---
+                
+                // Voting Modal
+                if (gameData.state === "voting" && amIAlive && myPlayerData.vote === null) {
+                    votingPlayerButtons.innerHTML = Object.keys(gameData.players)
+                        .filter(id => gameData.players[id].isAlive) // Only show alive players
+                        .map(id => {
+                            const player = gameData.players[id];
+                            const isMe = id === currentUserId;
+                            return `<button data-vote-id="${id}" class="vote-button w-full p-3 rounded-lg text-white font-semibold
+                                ${isMe ? 'bg-gray-600 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'}">
+                                Vote ${player.name} ${isMe ? '(You)' : ''}
+                            </button>`;
+                        }).join("");
+                    votingModal.classList.remove("hidden");
+                } else {
+                    votingModal.classList.add("hidden");
+                }
+                
+                // Game Over Modal
+                if (gameData.state === "game_over") {
+                    gameOverWinner.textContent = `${gameData.winner} Win!`;
+                    gameOverSecretWord.textContent = `The Secret Word was: ${gameData.secretWord}`;
+                    
+                    const infiltradoNames = Object.values(gameData.players)
+                        .filter(p => p.role === "Infiltrado")
+                        .map(p => p.name)
+                        .join(", ");
+                    gameOverInfiltrados.textContent = `Infiltrados: ${infiltradoNames}`;
+                    
+                    playAgainButton.classList.toggle("hidden", !isHost);
+                    gameOverModal.classList.remove("hidden");
+                } else {
+                    gameOverModal.classList.add("hidden");
+                }
+            }
+        }
+        
+        // --- Helper Functions ---
+        
+        function findNextAlivePlayer(startPlayerId, forceSameRound = false, roundStartPlayerId = null) {
+            const playerIds = Object.keys(localGameData.players);
+            const alivePlayerIds = playerIds.filter(id => localGameData.players[id].isAlive);
+            
+            // Sort them to ensure consistent turn order
+            // This isn't clockwise, but it's deterministic
+            alivePlayerIds.sort();
+            
+            if (forceSameRound && roundStartPlayerId) {
+                // This is for starting a new round (e.g., Round 2)
+                // We need to find the *first* alive player at or after the round start player
+                const roundStartIndex = alivePlayerIds.indexOf(roundStartPlayerId);
+                if (roundStartIndex !== -1) {
+                    return alivePlayerIds[roundStartIndex];
+                }
+                // If round start player is dead, fall through to default
+            }
+
+            const startIndex = alivePlayerIds.indexOf(startPlayerId);
+            
+            if (startIndex === -1) {
+                // Start player not found (maybe just eliminated), pick first alive
+                return alivePlayerIds[0] || null;
+            }
+            
+            const nextIndex = (startIndex + 1) % alivePlayerIds.length;
+            return alivePlayerIds[nextIndex];
+        }
+
+        // --- Event Listeners ---
+        window.addEventListener("load", () => {
+            // Start with only login visible
+            showSection("login");
+            
+            setUsernameButton.addEventListener("click", handleUsername);
+            usernameInput.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") handleUsername();
+            });
+
+            createGameButton.addEventListener("click", createGame);
+            joinGameButton.addEventListener("click", joinGame);
+            startGameButton.addEventListener("click", startGame);
+
+            submitWordButton.addEventListener("click", submitWord);
+            wordInput.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") submitWord();
+            });
+            
+            // Event delegation for voting buttons
+            votingPlayerButtons.addEventListener("click", (e) => {
+                const button = e.target.closest(".vote-button");
+                if (button && button.dataset.voteId) {
+                    if (button.dataset.voteId === currentUserId) return; // Can't vote for self
+                    submitVote(button.dataset.voteId);
+                }
+            });
+            
+            leaveGameButton.addEventListener("click", leaveGame);
+            playAgainButton.addEventListener("click", playAgain);
+
+            // Host settings change handlers
+            $$(".host-setting").forEach(el => {
+                el.addEventListener("change", async (e) => {
+                    if (isHost && currentGameId && localGameData.state === 'lobby') {
+                        const key = e.target.dataset.setting;
+                        const value = parseInt(e.target.value);
+                        try {
+                            await updateDoc(doc(db, "games", currentGameId), {
+                                [`settings.${key}`]: value
+                            });
+                        } catch (error) {
+                            console.error("Error updating setting:", error);
+                        }
+                    }
+                });
+            });
+        });
+
+    </script>
+</head>
+<body class="h-full font-sans text-gray-200 bg-gray-900">
+
+    <!-- Login Section -->
+    <section id="login-section" class="flex items-center justify-center h-full">
+        <div class="bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-sm">
+            <h1 class="text-3xl font-bold text-white text-center mb-6">Welcome to Infiltrados</h1>
+            <div class="space-y-4">
+                <label for="username-input" class="block text-sm font-medium text-gray-300">Enter your name:</label>
+                <input type="text" id="username-input" class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="e.g., Player1">
+                <button id="set-username-button" class="w-full p-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-bold transition-colors">
+                    Join
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Lobby Section -->
+    <section id="lobby-section" class="hidden h-full p-4 md:p-8">
+        <div class="max-w-4xl mx-auto">
+            <h1 class="text-3xl font-bold text-white text-center mb-6">Game Lobby</h1>
+            
+            <!-- Join/Create -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <!-- Create Game -->
+                <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+                    <h2 class="text-xl font-semibold text-white mb-4">Create New Game</h2>
+                    <!-- Settings -->
+                    <div class="space-y-3 mb-4">
+                        <div>
+                            <label for="total-players-select" class="block text-sm font-medium text-gray-300">Total Players</label>
+                            <select id="total-players-select" data-setting="totalPlayers" class="host-setting w-full p-2 bg-gray-700 rounded mt-1 text-white">
+                                <option>3</option>
+                                <option>4</option>
+                                <option>5</option>
+                                <option>6</option>
+                                <option>7</option>
+                                <option selected>8</option>
+                                <option>9</option>
+                                <option>10</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="infiltrados-select" class="block text-sm font-medium text-gray-300">Infiltrados</label>
+                            <select id="infiltrados-select" data-setting="infiltradosCount" class="host-setting w-full p-2 bg-gray-700 rounded mt-1 text-white">
+                                <option>1</option>
+                                <option selected>2</option>
+                                <option>3</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="rounds-before-vote-select" class="block text-sm font-medium text-gray-300">Rounds Before Vote</label>
+                            <select id="rounds-before-vote-select" data-setting="roundsBeforeVote" class="host-setting w-full p-2 bg-gray-700 rounded mt-1 text-white">
+                                <option>1</option>
+                                <option selected>2</option>
+                                <option>3</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button id="create-game-button" class="w-full p-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-bold transition-colors">
+                        Create Game
+                    </button>
+                </div>
+                
+                <!-- Join Game -->
+                <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+                    <h2 class="text-xl font-semibold text-white mb-4">Join Game</h2>
+                    <label for="game-id-input" class="block text-sm font-medium text-gray-300">Enter Game ID:</label>
+                    <input type="text" id="game-id-input" class="w-full p-3 mt-1 bg-gray-700 border border-gray-600 rounded-lg text-white uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="ABCXYZ">
+                    <button id="join-game-button" class="w-full p-3 mt-4 bg-green-600 hover:bg-green-700 rounded-lg text-white font-bold transition-colors">
+                        Join Game
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Current Lobby -->
+            <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+                <h2 class="text-2xl font-semibold text-white mb-4">Waiting Room</h2>
+                <h3 id="lobby-game-id" class="text-xl text-indigo-400 font-mono mb-4"></h3>
+                <h4 class="text-lg text-white mb-2">Players:</h4>
+                <ul id="lobby-player-list" class="space-y-2 mb-4">
+                    <!-- Player list injected by JS -->
+                </ul>
+                <button id="start-game-button" class="w-full p-3 bg-red-600 hover:bg-red-700 rounded-lg text-white font-bold transition-colors hidden">
+                    Start Game (Host Only)
+                </button>
+            </div>
+            
+        </div>
+    </section>
+
+    <!-- Game Section -->
+    <section id="game-section" class="hidden h-full flex flex-col p-4 md:p-8">
+        <div class="flex-shrink-0 mb-4">
+            <!-- Top Bar -->
+            <div class="flex justify-between items-center bg-gray-800 p-4 rounded-lg shadow-lg">
+                <div>
+                    <h1 class="text-2xl font-bold text-white">Infiltrados</h1>
+                    <div id="game-id-display" class="text-sm font-mono text-indigo-300"></div>
+                </div>
+                <div class="text-right">
+                    <div id="game-info-role" class="text-lg font-bold text-green-400"></div>
+                    <div id="game-info-word" class="text-sm text-gray-300"></div>
+                </div>
+                <button id="leave-game-button" class="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium">Leave Game</button>
+            </div>
+            <!-- Status Bar -->
+            <div id="game-status" class="text-center text-xl font-semibold text-yellow-300 p-4">
+                Loading game...
+            </div>
+        </div>
+
+        <!-- Main Game Area -->
+        <div class="flex-grow grid grid-cols-1 lg:grid-cols-4 gap-6 min-h-0">
+            
+            <!-- Players -->
+            <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
+                <h3 class="text-lg font-semibold text-white mb-3 border-b border-gray-700 pb-2">Players</h3>
+                <ul id="game-player-list" class="space-y-2">
+                    <!-- Player list injected by JS -->
+                </ul>
+            </div>
+            
+            <!-- Words -->
+            <div class="bg-gray-800 p-4 rounded-lg shadow-lg lg:col-span-2 flex flex-col">
+                <h3 class="text-lg font-semibold text-white mb-3 border-b border-gray-700 pb-2">Word List</h3>
+                <ul id="game-word-list" class="flex-grow space-y-2 overflow-y-auto h-64 md:h-auto">
+                    <!-- Word list injected by JS -->
+                </ul>
+                <!-- Word Input -->
+                <div id="word-input-container" class="mt-4 flex gap-2 hidden">
+                    <input type="text" id="word-input" class="flex-grow p-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Your word...">
+                    <button id="submit-word-button" class="p-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-bold transition-colors">
+                        Submit
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Log -->
+            <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
+                <h3 class="text-lg font-semibold text-white mb-3 border-b border-gray-700 pb-2">Game Log</h3>
+                <ul id="game-log" class="space-y-1 overflow-y-auto h-64 md:h-auto max-h-96">
+                    <!-- Log entries injected by JS -->
+                </ul>
+            </div>
+            
+        </div>
+    </section>
+    
+    <!-- Voting Modal -->
+    <div id="voting-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-md">
+            <h2 class="text-3xl font-bold text-white text-center mb-6">Vote to Eliminate!</h2>
+            <div id="voting-player-buttons" class="space-y-3">
+                <!-- Voting buttons injected by JS -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- Game Over Modal -->
+    <div id="game-over-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-md text-center">
+            <h2 id="game-over-winner" class="text-4xl font-bold text-yellow-300 mb-4"></h2>
+            <p id="game-over-secret-word" class="text-xl text-white mb-2"></p>
+            <p id="game-over-infiltrados" class="text-lg text-red-400 mb-8"></p>
+            
+            <button id="play-again-button" class="w-full p-3 mb-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-bold transition-colors hidden">
+                Play Again (Host)
+            </button>
+            <p class="text-sm text-gray-400">Wait for the host to start a new game.</p>
+        </div>
+    </div>
+
+</body>
+</html>
