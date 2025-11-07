@@ -64,10 +64,17 @@
         const totalPlayersSelect = $("#total-players-select");
         const infiltradosSelect = $("#infiltrados-select");
         const roundsBeforeVoteSelect = $("#rounds-before-vote-select");
+        // NEW: Custom Word Elements
+        const customWordContainer = $("#custom-word-container");
+        const customWordInput = $("#custom-word-input");
+        const setCustomWordButton = $("#set-custom-word-button");
+        const clearCustomWordButton = $("#clear-custom-word-button");
         
         // Game
         const gameInfoRole = $("#game-info-role");
         const gameInfoWord = $("#game-info-word");
+        // NEW: Reveal Role Button
+        const revealRoleButton = $("#reveal-role-button");
         const gameStatus = $("#game-status");
         const gameWordList = $("#game-word-list");
         const gamePlayerList = $("#game-player-list");
@@ -105,15 +112,18 @@
         // --- Firebase Initialization ---
         async function initFirebase() {
             try {
-                // Your config is correctly placed here!
-                const firebaseConfig = {
-                    apiKey: "AIzaSyAG6v0TT9miam83wXOB4aqdqD6qbc5GhPo",
-                    authDomain: "infiltrados-game.firebaseapp.com",
-                    projectId: "infiltrados-game",
-                    storageBucket: "infiltrados-game.firebasestorage.app",
-                    messagingSenderId: "742547669169",
-                    appId: "1:742547669169:web:68ee3277c5fb077647a290"
-                };
+                // Use injected config if available
+                const firebaseConfig = typeof __firebase_config !== 'undefined'
+                    ? JSON.parse(__firebase_config)
+                    : {
+                        // Fallback config (user's original)
+                        apiKey: "AIzaSyAG6v0TT9miam83wXOB4aqdqD6qbc5GhPo",
+                        authDomain: "infiltrados-game.firebaseapp.com",
+                        projectId: "infiltrados-game",
+                        storageBucket: "infiltrados-game.firebasestorage.app",
+                        messagingSenderId: "742547669169",
+                        appId: "1:742547669169:web:68ee3277c5fb077647a290"
+                    };
                 
                 if (!firebaseConfig.apiKey) {
                     showError("Firebase config is missing. App cannot start.");
@@ -138,10 +148,11 @@
                             if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                                 await signInWithCustomToken(auth, __initial_auth_token);
                             } else {
+                                // Fallback to anonymous if token isn't present
                                 await signInAnonymously(auth);
                             }
                         } catch (authError) {
-                            console.error("Anonymous sign-in failed:", authError);
+                            console.error("Sign-in failed:", authError);
                             showError("Failed to connect. Please refresh.");
                         }
                     }
@@ -217,6 +228,7 @@
                     }
                 },
                 secretWord: "",
+                customWord: "", // NEW: Field for custom word
                 turn: null, // playerId of current speaker
                 round: 1, // Current word round (1, 2, 3...)
                 gameTurn: 1, // Current vote cycle (1, 2, ...)
@@ -338,6 +350,7 @@
             lobbyGameIdDisplay.textContent = "";
             lobbyPlayerList.innerHTML = "";
             gameIdInput.value = "";
+            customWordContainer.classList.add("hidden"); // Hide custom word box
         }
 
         async function startGame() {
@@ -369,7 +382,8 @@
             }
 
             // --- Pick Word & Start Player ---
-            const secretWord = SECRET_WORDS[Math.floor(Math.random() * SECRET_WORDS.length)];
+            // NEW: Use custom word if available, otherwise pick random
+            const secretWord = gameData.customWord || SECRET_WORDS[Math.floor(Math.random() * SECRET_WORDS.length)];
             const startPlayerId = shuffledPlayerIds[Math.floor(Math.random() * shuffledPlayerIds.length)];
 
             // --- Update Game Doc ---
@@ -379,6 +393,7 @@
                     state: "word_round",
                     players: newPlayers,
                     secretWord: secretWord,
+                    customWord: "", // Clear custom word after use
                     turn: startPlayerId,
                     round: 1,
                     gameTurn: 1,
@@ -457,8 +472,8 @@
                  const wordsInLastRound = words.filter(w => w.gameTurn === gameTurn && w.round === (round - 1)).length;
                  
                  if (wordsInLastRound === totalAlive) {
-                    // Yes, the voting round is complete. Time to vote.
-                    return true;
+                     // Yes, the voting round is complete. Time to vote.
+                     return true;
                  }
             }
             return false;
@@ -541,13 +556,13 @@
             let logMessage;
 
             if (tiedPlayers.length === 0) {
-                 // This can happen if only one person is alive, but win check should catch it
-                 // Or if no one votes? For simplicity, we'll just pick a random alive player
-                 console.warn("No votes cast? Defaulting to random elim.");
-                 const alivePlayers = Object.keys(gameData.players).filter(id => gameData.players[id].isAlive);
-                 eliminatedPlayerId = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
-                 logMessage = "No votes were cast! By random choice,";
-                 
+                // This can happen if only one person is alive, but win check should catch it
+                // Or if no one votes? For simplicity, we'll just pick a random alive player
+                console.warn("No votes cast? Defaulting to random elim.");
+                const alivePlayers = Object.keys(gameData.players).filter(id => gameData.players[id].isAlive);
+                eliminatedPlayerId = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
+                logMessage = "No votes were cast! By random choice,";
+                
             } else if (tiedPlayers.length === 1) {
                 // Clear winner
                 eliminatedPlayerId = tiedPlayers[0];
@@ -639,6 +654,7 @@
                     state: "lobby",
                     players: newPlayers,
                     secretWord: "",
+                    customWord: "", // Clear custom word
                     turn: null,
                     round: 1,
                     gameTurn: 1,
@@ -674,33 +690,26 @@
                     totalPlayersSelect.value = gameData.settings.totalPlayers;
                     infiltradosSelect.value = gameData.settings.infiltradosCount;
                     roundsBeforeVoteSelect.value = gameData.settings.roundsBeforeVote;
+                    // NEW: Show custom word container for host
+                    customWordContainer.classList.remove("hidden");
+                    customWordInput.value = gameData.customWord || "";
+                } else {
+                    customWordContainer.classList.add("hidden");
                 }
             }
             
             // --- Game Section ---
             if (gameData.state !== "lobby") {
                 showSection("game");
-                // const myPlayerData = gameData.players[currentUserId]; // Moved up
-                // const amIAlive = myPlayerData && myPlayerData.isAlive; // Moved up
+                // Hide lobby-specific elements
+                customWordContainer.classList.add("hidden");
                 
                 gameIdDisplay.textContent = `Game ID: ${gameData.gameId}`;
 
-                // My Info
-                if (myPlayerData) {
-                    gameInfoRole.textContent = myPlayerData.role || "Role not assigned";
-                    gameInfoRole.className = myPlayerData.role === "Infiltrado" ? "text-red-400 font-bold" : "text-green-400 font-bold";
-                    
-                    if (myPlayerData.role === "Regular") {
-                        gameInfoWord.textContent = `Word: ${gameData.secretWord}`;
-                        gameInfoWord.classList.remove("hidden");
-                    } else if (myPlayerData.role === "Infiltrado") {
-                        gameInfoWord.textContent = "Blend in! Guess the word.";
-                        gameInfoWord.classList.remove("hidden");
-                    } else {
-                        gameInfoWord.classList.add("hidden");
-                    }
-                }
-                
+                // My Info - NOW HANDLED BY REVEAL BUTTON
+                // We just ensure the button is visible/hidden
+                revealRoleButton.classList.toggle("hidden", !myPlayerData);
+
                 // Game Status
                 let statusText = "";
                 if (gameData.state === "word_round") {
@@ -840,6 +849,66 @@
             leaveGameButton.addEventListener("click", leaveGame);
             playAgainButton.addEventListener("click", playAgain);
 
+            // --- NEW: Custom Word Listeners ---
+            setCustomWordButton.addEventListener("click", async () => {
+                if (!isHost || !currentGameId || localGameData.state !== 'lobby') return;
+                const word = customWordInput.value.trim();
+                if (word.length < 2 || word.includes(" ")) {
+                    showError("Custom word must be a single word, min 2 chars.");
+                    return;
+                }
+                try {
+                    const gameRef = getGameDocRef(currentGameId);
+                    await updateDoc(gameRef, { customWord: word });
+                } catch (error) {
+                    console.error("Error setting custom word:", error);
+                }
+            });
+            
+            clearCustomWordButton.addEventListener("click", async () => {
+                if (!isHost || !currentGameId || localGameData.state !== 'lobby') return;
+                try {
+                    const gameRef = getGameDocRef(currentGameId);
+                    await updateDoc(gameRef, { customWord: "" });
+                    customWordInput.value = "";
+                } catch (error) {
+                    console.error("Error clearing custom word:", error);
+                }
+            });
+            
+            // --- NEW: Reveal Role Listeners ---
+            const showRole = () => {
+                const myPlayerData = localGameData.players[currentUserId];
+                if (!myPlayerData) return;
+
+                gameInfoRole.textContent = `Role: ${myPlayerData.role}`;
+                gameInfoRole.className = myPlayerData.role === "Infiltrado" ? "text-lg font-bold text-red-400" : "text-lg font-bold text-green-400";
+                
+                if (myPlayerData.role === "Regular") {
+                    gameInfoWord.textContent = `Word: ${localGameData.secretWord}`;
+                } else if (myPlayerData.role === "Infiltrado") {
+                    gameInfoWord.textContent = "Blend in! Guess the word.";
+                }
+                gameInfoWord.classList.remove("hidden");
+            };
+
+            const hideRole = () => {
+                gameInfoRole.textContent = "Your Role: [Hidden]";
+                gameInfoRole.className = "text-lg font-bold text-gray-300";
+                gameInfoWord.classList.add("hidden");
+            };
+
+            revealRoleButton.addEventListener("mousedown", showRole);
+            revealRoleButton.addEventListener("mouseup", hideRole);
+            revealRoleButton.addEventListener("mouseleave", hideRole); // In case mouse leaves button while pressed
+            
+            revealRoleButton.addEventListener("touchstart", (e) => {
+                e.preventDefault(); // Prevent scrolling/zooming
+                showRole();
+            });
+            revealRoleButton.addEventListener("touchend", hideRole);
+
+
             // Host settings change handlers
             $$(".host-setting").forEach(el => {
                 el.addEventListener("change", async (e) => {
@@ -941,6 +1010,17 @@
             <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
                 <h2 class="text-2xl font-semibold text-white mb-4">Waiting Room</h2>
                 <h3 id="lobby-game-id" class="text-xl text-indigo-400 font-mono mb-4"></h3>
+
+                <!-- NEW: Custom Word Input (Host Only) -->
+                <div id="custom-word-container" class="hidden mb-4 p-4 bg-gray-700 rounded-lg">
+                    <label for="custom-word-input" class="block text-sm font-medium text-gray-300">Custom Secret Word (Host Only)</label>
+                    <div class="flex gap-2 mt-1">
+                        <input type="text" id="custom-word-input" class="flex-grow p-2 bg-gray-600 border border-gray-500 rounded-lg text-white" placeholder="Leave blank for random">
+                        <button id="set-custom-word-button" class="p-2 bg-green-600 hover:bg-green-700 rounded-lg text-white font-semibold">Set</button>
+                        <button id="clear-custom-word-button" class="p-2 bg-gray-500 hover:bg-gray-600 rounded-lg text-white font-semibold">Clear</button>
+                    </div>
+                </div>
+
                 <h4 class="text-lg text-white mb-2">Players:</h4>
                 <ul id="lobby-player-list" class="space-y-2 mb-4">
                     <!-- Player list injected by JS -->
@@ -963,8 +1043,13 @@
                     <div id="game-id-display" class="text-sm font-mono text-indigo-300"></div>
                 </div>
                 <div class="text-right">
-                    <div id="game-info-role" class="text-lg font-bold text-green-400"></div>
-                    <div id="game-info-word" class="text-sm text-gray-300"></div>
+                    <!-- UPDATED: Role display is now hidden by default -->
+                    <div id="game-info-role" class="text-lg font-bold text-gray-300">Your Role: [Hidden]</div>
+                    <div id="game-info-word" class="text-sm text-gray-300 hidden"></div>
+                    <!-- NEW: Reveal Role Button -->
+                    <button id="reveal-role-button" class="mt-1 p-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium select-none cursor-pointer">
+                        Press and Hold to See Role
+                    </button>
                 </div>
                 <button id="leave-game-button" class="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium">Leave Game</button>
             </div>
