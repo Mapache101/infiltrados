@@ -6,53 +6,66 @@
     <title>Infiltrados Online</title>
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- NEW: Custom styles for Glassmorphism -->
+    <!-- NEW: Custom styles for Neumorphism (Light) -->
     <style>
+        :root {
+            --neu-bg: #e0e5ec;
+            --neu-shadow-light: #ffffff;
+            --neu-shadow-dark: #babecc;
+        }
         body {
-            background-color: #0B1120; /* Dark blue fallback */
-            background-image: linear-gradient(135deg, #0B1120 0%, #1A202C 50%, #0B1120 100%);
-            background-attachment: fixed;
+            background-color: var(--neu-bg);
         }
-        .glass-card {
-            background: rgba(41, 51, 71, 0.25); /* Darker, semi-transparent base */
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px); /* Safari support */
+        .neu-outset {
+            background: var(--neu-bg);
             border-radius: 16px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+            box-shadow: 5px 5px 10px var(--neu-shadow-dark), -5px -5px 10px var(--neu-shadow-light);
         }
-        /* Lighter glass for modals */
-        .glass-modal {
-             background: rgba(30, 41, 59, 0.5); /* Darker base for modal content */
-             backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            border-radius: 16px;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        .neu-outset-sm {
+            background: var(--neu-bg);
+            border-radius: 8px;
+            box-shadow: 3px 3px 5px var(--neu-shadow-dark), -3px -3px 5px var(--neu-shadow-light);
         }
-        /* Update inputs */
-        .glass-input {
-            background: rgba(0, 0, 0, 0.2) !important;
-            border: 1px solid rgba(255, 255, 255, 0.1) !important;
-            color: white !important;
-            border-radius: 8px; /* .rounded-lg */
+        .neu-inset {
+            background: var(--neu-bg);
+            border-radius: 8px;
+            box-shadow: inset 3px 3px 5px var(--neu-shadow-dark), inset -3px -3px 5px var(--neu-shadow-light);
         }
-        .glass-input::placeholder {
-            color: #a0aec0; /* text-gray-400 */
+        .neu-input {
+            background: transparent;
+            border: none;
         }
-        .glass-input:focus {
-            border-color: #818cf8 !important; /* focus:ring-indigo-400 */
-            box-shadow: 0 0 0 2px #6366f1; /* Ring */
+        .neu-input::placeholder {
+            color: #9ca3af; /* text-gray-400 */
+        }
+        .neu-input:focus {
             outline: none;
         }
-        /* Update selects */
-        .glass-select {
-            background: rgba(0, 0, 0, 0.2) !important;
-            border: 1px solid rgba(255, 255, 255, 0.1) !important;
-            color: white !important;
-            border-radius: 8px; /* .rounded-lg */
+        .neu-button {
+            background: var(--neu-bg);
+            border: none;
+            color: #374151; /* text-gray-700 */
+            font-weight: 600;
+            transition: box-shadow 0.1s ease-in-out;
+        }
+        .neu-button:active, .neu-button-pressed {
+            box-shadow: inset 3px 3px 5px var(--neu-shadow-dark), inset -3px -3px 5px var(--neu-shadow-light) !important;
+            color: #4f46e5; /* indigo-600 */
+        }
+        .neu-button-red { color: #dc2626; /* red-600 */ }
+        .neu-button-red:active, .neu-button-red.neu-button-pressed { color: #b91c1c; /* red-700 */ }
+        .neu-button-green { color: #16a34a; /* green-600 */ }
+        .neu-button-green:active, .neu-button-green.neu-button-pressed { color: #15803d; /* green-700 */ }
+        .neu-button-blue { color: #2563eb; /* blue-600 */ }
+        .neu-button-blue:active, .neu-button-blue.neu-button-pressed { color: #1d4ed8; /* blue-700 */ }
+        .neu-button-gray { color: #6b7280; /* gray-500 */ }
+        .neu-button-gray:active, .neu-button-gray.neu-button-pressed { color: #4b5563; /* gray-600 */ }
+        
+        .neu-select {
+            background: var(--neu-bg);
+            border: none;
             /* Fix for arrow */
-            background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+            background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
             background-position: right 0.5rem center;
             background-repeat: no-repeat;
             background-size: 1.5em 1.5em;
@@ -60,19 +73,6 @@
             -moz-appearance: none;
             appearance: none;
             padding-right: 2.5rem;
-        }
-        /* List items */
-        .glass-list-item {
-            background: rgba(255, 255, 255, 0.05);
-            transition: background-color 0.2s;
-            border-radius: 8px; /* .rounded */
-        }
-        .glass-list-item:hover {
-            background: rgba(255, 255, 255, 0.1);
-        }
-        .glass-list-item-dead {
-            background: rgba(0, 0, 0, 0.1);
-            border-radius: 8px; /* .rounded */
         }
     </style>
     <!-- Load Firebase JS SDKs -->
@@ -104,6 +104,7 @@
         let gameUnsubscribe = null; // To stop listening to game updates
         let localGameData = {}; // Local cache of game state
         let isHost = false;
+        let isRoleVisible = false; // NEW: State for role visibility
         // Moved appId to module scope so all functions can access it
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'infiltrados-game';
 
@@ -136,6 +137,7 @@
         // NEW: Custom Word Elements
         const customWordContainer = $("#custom-word-container");
         const customWordInput = $("#custom-word-input");
+        const customThemeInput = $("#custom-theme-input"); // NEW: Theme input
         const setCustomWordButton = $("#set-custom-word-button");
         const clearCustomWordButton = $("#clear-custom-word-button");
         
@@ -152,6 +154,7 @@
         const wordInput = $("#word-input");
         const submitWordButton = $("#submit-word-button");
         const gameIdDisplay = $("#game-id-display");
+        const gameThemeDisplay = $("#game-theme-display"); // NEW: Theme display
 
         // Modals
         const votingModal = $("#voting-modal");
@@ -248,7 +251,7 @@
             // In a real app, use a modal. For now, console.
             console.error("ERROR:", message);
             gameStatus.textContent = `Error: ${message}`;
-            gameStatus.classList.add("text-red-400");
+            gameStatus.classList.add("text-red-600");
         }
 
         // --- Game Logic ---
@@ -302,6 +305,8 @@
                 },
                 secretWord: "",
                 customWord: "", // NEW: Field for custom word
+                customTheme: "", // NEW: Field for custom theme
+                theme: "", // NEW: Field for the *actual* game theme
                 turn: null, // playerId of current speaker
                 round: 1, // Current word round (1, 2, 3...)
                 gameTurn: 1, // Current vote cycle (1, 2, ...)
@@ -425,6 +430,7 @@
             currentGameId = null;
             isHost = false;
             localGameData = {};
+            isRoleVisible = false; // NEW: Reset role visibility
             showSection("lobby");
             lobbyGameIdDisplay.textContent = "";
             lobbyPlayerList.innerHTML = "";
@@ -438,9 +444,26 @@
             const gameData = localGameData;
             const playerIds = Object.keys(gameData.players);
 
+            // NEW: Debug check
+            const isDebugMode = (currentUsername === "debug" || currentUsername === "admin");
+
             // Check if player count matches setting
-            if (playerIds.length !== gameData.settings.totalPlayers) {
+            if (playerIds.length !== gameData.settings.totalPlayers && !isDebugMode) { // <-- Added !isDebugMode
                 return showError(`Waiting for ${gameData.settings.totalPlayers} players. Currently have ${playerIds.length}.`);
+            }
+
+            // NEW: If in debug mode, override player count setting to match current players
+            if (isDebugMode && playerIds.length < gameData.settings.totalPlayers) {
+                console.warn("DEBUG MODE: Starting game with fewer players than setting.");
+                // We need to update the settings *in the local copy* so that role assignment works correctly.
+                // We don't need to write this to Firestore, as it's just for this function's logic.
+                gameData.settings.totalPlayers = playerIds.length;
+                
+                // Also need to ensure infiltrados isn't more than players
+                if (gameData.settings.infiltradosCount >= playerIds.length) {
+                    gameData.settings.infiltradosCount = 1; // Default to 1 infiltrado in debug
+                    console.warn("DEBUG MODE: Infiltrado count adjusted to 1.");
+                }
             }
             
             // --- Assign Roles ---
@@ -461,8 +484,12 @@
             }
 
             // --- Pick Word & Start Player ---
-            // NEW: Use custom word if available, otherwise pick random
-            const secretWord = gameData.customWord || SECRET_WORDS[Math.floor(Math.random() * SECRET_WORDS.length)];
+            // NEW: Use custom word/theme if available
+            const customWord = gameData.customWord;
+            const customTheme = gameData.customTheme;
+            
+            const secretWord = customWord || SECRET_WORDS[Math.floor(Math.random() * SECRET_WORDS.length)];
+            const theme = customWord ? (customTheme || "General") : "Location/Place"; // Set theme logic
             
             // NEW LOGIC: Pick a random *Regular* player to start
             const regularPlayerIds = Object.keys(newPlayers).filter(id => newPlayers[id].role === "Regular");
@@ -475,7 +502,6 @@
                 console.warn("No regular players found! Starting with a random player.");
                 startPlayerId = shuffledPlayerIds[Math.floor(Math.random() * shuffledPlayerIds.length)];
             }
-            // const startPlayerId = shuffledPlayerIds[Math.floor(Math.random() * shuffledPlayerIds.length)]; // Old line
 
             // --- Update Game Doc ---
             try {
@@ -484,14 +510,14 @@
                     state: "word_round",
                     players: newPlayers,
                     secretWord: secretWord,
+                    theme: theme, // Set the game theme
                     customWord: "", // Clear custom word after use
+                    customTheme: "", // Clear custom theme after use
                     turn: startPlayerId,
                     round: 1,
                     gameTurn: 1,
                     words: [],
-                    log: arrayUnion("Game started! Roles assigned. It's time to speak.")
-                    // Note: In a real app, infiltradoIds shouldn't be public.
-                    // For this game, we'll reveal them at the end.
+                    log: arrayUnion(`Game started! Theme: ${theme}. Roles assigned.`)
                 });
             } catch (error) {
                 console.error("Error starting game:", error);
@@ -747,6 +773,8 @@
                     players: newPlayers,
                     secretWord: "",
                     customWord: "", // Clear custom word
+                    customTheme: "", // Clear custom theme
+                    theme: "", // Clear game theme
                     turn: null,
                     round: 1,
                     gameTurn: 1,
@@ -759,6 +787,32 @@
             }
         }
 
+        // --- NEW: Role Visibility Toggle Function ---
+        function updateRoleVisibility() {
+            if (isRoleVisible) {
+                const myPlayerData = localGameData.players[currentUserId];
+                if (!myPlayerData) return;
+
+                gameInfoRole.textContent = `Role: ${myPlayerData.role}`;
+                gameInfoRole.className = myPlayerData.role === "Infiltrado" ? "text-lg font-bold text-red-600" : "text-lg font-bold text-green-600";
+                
+                if (myPlayerData.role === "Regular") {
+                    gameInfoWord.textContent = `Word: ${localGameData.secretWord}`;
+                } else if (myPlayerData.role === "Infiltrado") {
+                    gameInfoWord.textContent = "Blend in! Guess the word.";
+                }
+                gameInfoWord.classList.remove("hidden");
+                revealRoleButton.textContent = "Hide Role";
+                revealRoleButton.classList.add("neu-button-pressed");
+            } else {
+                gameInfoRole.textContent = "Your Role: [Hidden]";
+                gameInfoRole.className = "text-lg font-bold text-gray-700";
+                gameInfoWord.classList.add("hidden");
+                revealRoleButton.textContent = "Show Role";
+                revealRoleButton.classList.remove("neu-button-pressed");
+            }
+        }
+
         // --- UI Update Function ---
         function updateUI(gameData) {
             // --- Get player data (needed for modals) ---
@@ -767,12 +821,13 @@
 
             // --- Lobby Section ---
             if (gameData.state === "lobby") {
+                isRoleVisible = false; // Reset role visibility
                 showSection("lobby");
                 lobbyGameIdDisplay.textContent = `Game ID: ${gameData.gameId}`;
                 
                 const players = Object.values(gameData.players);
                 lobbyPlayerList.innerHTML = players.map(p => 
-                    `<li class="glass-list-item p-2">${p.symbol} ${p.name}</li>`
+                    `<li class="neu-outset-sm p-2">${p.symbol} ${p.name}</li>`
                 ).join("");
                 
                 // Host controls
@@ -785,6 +840,7 @@
                     // NEW: Show custom word container for host
                     customWordContainer.classList.remove("hidden");
                     customWordInput.value = gameData.customWord || "";
+                    customThemeInput.value = gameData.customTheme || ""; // NEW: Update theme input
                 } else {
                     customWordContainer.classList.add("hidden");
                 }
@@ -797,10 +853,12 @@
                 customWordContainer.classList.add("hidden");
                 
                 gameIdDisplay.textContent = `Game ID: ${gameData.gameId}`;
+                gameThemeDisplay.textContent = `Theme: ${gameData.theme || "Loading..."}`; // NEW: Display theme
 
                 // My Info - NOW HANDLED BY REVEAL BUTTON
                 // We just ensure the button is visible/hidden
                 revealRoleButton.classList.toggle("hidden", !myPlayerData);
+                updateRoleVisibility(); // NEW: Update visibility on every render
 
                 // Game Status
                 let statusText = "";
@@ -821,9 +879,9 @@
                 // Word List
                 gameWordList.innerHTML = gameData.words.map(w => {
                     const playerSymbol = gameData.players[w.player]?.symbol || "❔";
-                    return `<li class="glass-list-item p-2">
-                        <span class="font-bold text-indigo-300">${playerSymbol} ${w.name} (R${w.round}):</span>
-                        <span class="ml-2 text-white">${w.word}</span>
+                    return `<li class="neu-outset-sm p-2">
+                        <span class="font-bold text-indigo-600">${playerSymbol} ${w.name} (R${w.round}):</span>
+                        <span class="ml-2 text-gray-800">${w.word}</span>
                     </li>`
                 }).join("");
                 // Auto-scroll word list
@@ -831,7 +889,7 @@
                 
                 // Player List
                 gamePlayerList.innerHTML = Object.values(gameData.players).map(p => 
-                    `<li class="p-2 ${p.isAlive ? 'glass-list-item' : 'glass-list-item-dead text-gray-500 line-through'}">
+                    `<li class="p-2 rounded-lg ${p.isAlive ? 'neu-outset-sm' : 'neu-inset text-gray-500 line-through'}">
                         ${p.symbol} ${p.name}
                         ${p.isAlive ? '' : ' (Eliminated)'}
                     </li>`
@@ -839,7 +897,7 @@
                 
                 // Game Log
                 gameLog.innerHTML = gameData.log.slice().reverse().map(entry => 
-                    `<li class="text-xs text-gray-300">${entry}</li>` // Text size and color updated
+                    `<li class="text-xs text-gray-600">${entry}</li>` // Text size and color updated
                 ).join("");
             }
             
@@ -853,8 +911,7 @@
                         const player = gameData.players[id];
                         const isMe = id === currentUserId;
                         const playerSymbol = player.symbol || "❔"; // Get symbol
-                        return `<button data-vote-id="${id}" class="vote-button w-full p-3 rounded-lg text-white font-semibold
-                            ${isMe ? 'bg-gray-600 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'}">
+                        return `<button data-vote-id="${id}" class="vote-button w-full p-3 rounded-lg neu-button neu-outset ${isMe ? 'neu-button-gray opacity-50 cursor-not-allowed' : 'neu-button-red'}">
                             Vote ${playerSymbol} ${player.name} ${isMe ? '(You)' : ''}
                         </button>`;
                     }).join("");
@@ -865,8 +922,10 @@
             
             // Game Over Modal
             if (gameData.state === "game_over") {
+                isRoleVisible = false; // Reset role visibility
                 gameOverWinner.textContent = `${gameData.winner} Win!`;
-                gameOverSecretWord.textContent = `The Secret Word was: ${gameData.secretWord}`;
+                // NEW: Show theme on game over
+                gameOverSecretWord.textContent = `Word: ${gameData.secretWord} (Theme: ${gameData.theme})`;
                 
                 const infiltradoNames = Object.values(gameData.players)
                     .filter(p => p.role === "Infiltrado")
@@ -943,17 +1002,20 @@
             leaveGameButton.addEventListener("click", leaveGame);
             playAgainButton.addEventListener("click", playAgain);
 
-            // --- NEW: Custom Word Listeners ---
+            // --- NEW: Custom Word Listeners (WITH BUG FIX) ---
             setCustomWordButton.addEventListener("click", async () => {
                 if (!isHost || !currentGameId || localGameData.state !== 'lobby') return;
                 const word = customWordInput.value.trim();
+                const theme = customThemeInput.value.trim(); // NEW: Get theme
                 if (word.length < 2 || word.includes(" ")) {
                     showError("Custom word must be a single word, min 2 chars.");
                     return;
                 }
                 try {
                     const gameRef = getGameDocRef(currentGameId);
-                    await updateDoc(gameRef, { customWord: word });
+                    await updateDoc(gameRef, { customWord: word, customTheme: theme }); // NEW: Set both
+                    localGameData.customWord = word; // BUG FIX: Update local cache
+                    localGameData.customTheme = theme; // BUG FIX: Update local cache
                 } catch (error) {
                     console.error("Error setting custom word:", error);
                 }
@@ -963,44 +1025,21 @@
                 if (!isHost || !currentGameId || localGameData.state !== 'lobby') return;
                 try {
                     const gameRef = getGameDocRef(currentGameId);
-                    await updateDoc(gameRef, { customWord: "" });
+                    await updateDoc(gameRef, { customWord: "", customTheme: "" }); // NEW: Clear both
+                    localGameData.customWord = ""; // BUG FIX: Update local cache
+                    localGameData.customTheme = ""; // BUG FIX: Update local cache
                     customWordInput.value = "";
+                    customThemeInput.value = ""; // NEW: Clear theme input
                 } catch (error) {
                     console.error("Error clearing custom word:", error);
                 }
             });
             
-            // --- NEW: Reveal Role Listeners ---
-            const showRole = () => {
-                const myPlayerData = localGameData.players[currentUserId];
-                if (!myPlayerData) return;
-
-                gameInfoRole.textContent = `Role: ${myPlayerData.role}`;
-                gameInfoRole.className = myPlayerData.role === "Infiltrado" ? "text-lg font-bold text-red-400" : "text-lg font-bold text-green-400";
-                
-                if (myPlayerData.role === "Regular") {
-                    gameInfoWord.textContent = `Word: ${localGameData.secretWord}`;
-                } else if (myPlayerData.role === "Infiltrado") {
-                    gameInfoWord.textContent = "Blend in! Guess the word.";
-                }
-                gameInfoWord.classList.remove("hidden");
-            };
-
-            const hideRole = () => {
-                gameInfoRole.textContent = "Your Role: [Hidden]";
-                gameInfoRole.className = "text-lg font-bold text-gray-300";
-                gameInfoWord.classList.add("hidden");
-            };
-
-            revealRoleButton.addEventListener("mousedown", showRole);
-            revealRoleButton.addEventListener("mouseup", hideRole);
-            revealRoleButton.addEventListener("mouseleave", hideRole); // In case mouse leaves button while pressed
-            
-            revealRoleButton.addEventListener("touchstart", (e) => {
-                e.preventDefault(); // Prevent scrolling/zooming
-                showRole();
+            // --- NEW: Reveal Role Listeners (TOGGLE) ---
+            revealRoleButton.addEventListener("click", () => {
+                isRoleVisible = !isRoleVisible; // Toggle state
+                updateRoleVisibility(); // Update UI
             });
-            revealRoleButton.addEventListener("touchend", hideRole);
 
 
             // Host settings change handlers
@@ -1024,19 +1063,19 @@
 
     </script>
 </head>
-<body class="h-full font-sans text-gray-100">
+<body class="h-full font-sans text-gray-700 bg-gray-100">
 
     <!-- Login Section -->
     <section id="login-section" class="flex items-center justify-center h-full p-4">
-        <div class="glass-card p-8 rounded-2xl shadow-xl w-full max-w-sm">
-            <h1 class="text-3xl font-bold text-white text-center mb-6">Welcome to Infiltrados</h1>
+        <div class="neu-outset p-8 rounded-2xl w-full max-w-sm">
+            <h1 class="text-3xl font-bold text-gray-800 text-center mb-6">Welcome to Infiltrados</h1>
             <div class="space-y-4">
-                <label for="username-input" class="block text-sm font-medium text-gray-200">Enter your name:</label>
-                <input type="text" id="username-input" class="w-full p-3 glass-input" placeholder="e.g., Player1">
-                <button id="set-username-button" class="w-full p-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-bold transition-colors shadow-lg">
+                <label for="username-input" class="block text-sm font-medium text-gray-600">Enter your name:</label>
+                <input type="text" id="username-input" class="w-full p-3 neu-inset neu-input" placeholder="e.g., Player1">
+                <button id="set-username-button" class="w-full p-3 rounded-lg neu-button neu-outset text-indigo-600">
                     Join
                 </button>
-                <p id="login-error" class="text-red-400 text-sm text-center h-4"></p>
+                <p id="login-error" class="text-red-600 text-sm text-center h-4"></p>
             </div>
         </div>
     </section>
@@ -1044,18 +1083,18 @@
     <!-- Lobby Section -->
     <section id="lobby-section" class="hidden h-full p-4 md:p-8 overflow-y-auto">
         <div class="max-w-4xl mx-auto">
-            <h1 class="text-3xl font-bold text-white text-center mb-6">Game Lobby</h1>
+            <h1 class="text-3xl font-bold text-gray-800 text-center mb-6">Game Lobby</h1>
             
             <!-- Join/Create -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                 <!-- Create Game -->
-                <div class="glass-card p-6 rounded-2xl">
-                    <h2 class="text-xl font-semibold text-white mb-4">Create New Game</h2>
+                <div class="neu-outset p-6 rounded-2xl">
+                    <h2 class="text-xl font-semibold text-gray-800 mb-4">Create New Game</h2>
                     <!-- Settings -->
                     <div class="space-y-3 mb-4">
                         <div>
-                            <label for="total-players-select" class="block text-sm font-medium text-gray-200">Total Players</label>
-                            <select id="total-players-select" data-setting="totalPlayers" class="host-setting w-full p-2 glass-select mt-1">
+                            <label for="total-players-select" class="block text-sm font-medium text-gray-600">Total Players</label>
+                            <select id="total-players-select" data-setting="totalPlayers" class="host-setting w-full p-2 neu-inset neu-select mt-1">
                                 <option>3</option>
                                 <option>4</option>
                                 <option>5</option>
@@ -1067,58 +1106,64 @@
                             </select>
                         </div>
                         <div>
-                            <label for="infiltrados-select" class="block text-sm font-medium text-gray-200">Infiltrados</label>
-                            <select id="infiltrados-select" data-setting="infiltradosCount" class="host-setting w-full p-2 glass-select mt-1">
+                            <label for="infiltrados-select" class="block text-sm font-medium text-gray-600">Infiltrados</label>
+                            <select id="infiltrados-select" data-setting="infiltradosCount" class="host-setting w-full p-2 neu-inset neu-select mt-1">
                                 <option>1</option>
                                 <option selected>2</option>
                                 <option>3</option>
                             </select>
                         </div>
                         <div>
-                            <label for="rounds-before-vote-select" class="block text-sm font-medium text-gray-200">Rounds Before Vote</label>
-                            <select id="rounds-before-vote-select" data-setting="roundsBeforeVote" class="host-setting w-full p-2 glass-select mt-1">
+                            <label for="rounds-before-vote-select" class="block text-sm font-medium text-gray-600">Rounds Before Vote</label>
+                            <select id="rounds-before-vote-select" data-setting="roundsBeforeVote" class="host-setting w-full p-2 neu-inset neu-select mt-1">
                                 <option>1</option>
                                 <option selected>2</option>
                                 <option>3</option>
                             </select>
                         </div>
                     </div>
-                    <button id="create-game-button" class="w-full p-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-bold transition-colors shadow-lg">
+                    <button id="create-game-button" class="w-full p-3 rounded-lg neu-button neu-outset text-indigo-600">
                         Create Game
                     </button>
                 </div>
                 
                 <!-- Join Game -->
-                <div class="glass-card p-6 rounded-2xl">
-                    <h2 class="text-xl font-semibold text-white mb-4">Join Game</h2>
-                    <label for="game-id-input" class="block text-sm font-medium text-gray-200">Enter Game ID:</label>
-                    <input type="text" id="game-id-input" class="w-full p-3 mt-1 glass-input uppercase" placeholder="ABCXYZ">
-                    <button id="join-game-button" class="w-full p-3 mt-4 bg-green-600 hover:bg-green-700 rounded-lg text-white font-bold transition-colors shadow-lg">
+                <div class="neu-outset p-6 rounded-2xl">
+                    <h2 class="text-xl font-semibold text-gray-800 mb-4">Join Game</h2>
+                    <label for="game-id-input" class="block text-sm font-medium text-gray-600">Enter Game ID:</label>
+                    <input type="text" id="game-id-input" class="w-full p-3 mt-1 neu-inset neu-input uppercase" placeholder="ABCXYZ">
+                    <button id="join-game-button" class="w-full p-3 mt-4 rounded-lg neu-button neu-outset neu-button-green">
                         Join Game
                     </button>
                 </div>
             </div>
             
             <!-- Current Lobby -->
-            <div class="glass-card p-6 rounded-2xl">
-                <h2 class="text-2xl font-semibold text-white mb-4">Waiting Room</h2>
-                <h3 id="lobby-game-id" class="text-xl text-indigo-300 font-mono mb-4"></h3>
+            <div class="neu-outset p-6 rounded-2xl">
+                <h2 class="text-2xl font-semibold text-gray-800 mb-4">Waiting Room</h2>
+                <h3 id="lobby-game-id" class="text-xl text-indigo-500 font-mono mb-4"></h3>
 
                 <!-- NEW: Custom Word Input (Host Only) -->
-                <div id="custom-word-container" class="hidden mb-4 p-4 bg-black/20 rounded-lg">
-                    <label for="custom-word-input" class="block text-sm font-medium text-gray-200">Custom Secret Word (Host Only)</label>
-                    <div class="flex gap-2 mt-1">
-                        <input type="text" id="custom-word-input" class="flex-grow p-2 glass-input" placeholder="Leave blank for random">
-                        <button id="set-custom-word-button" class="p-2 bg-green-600 hover:bg-green-700 rounded-lg text-white font-semibold">Set</button>
-                        <button id="clear-custom-word-button" class="p-2 bg-gray-500 hover:bg-gray-600 rounded-lg text-white font-semibold">Clear</button>
+                <div id="custom-word-container" class="hidden mb-4 p-4 neu-inset rounded-lg space-y-2">
+                    <div>
+                        <label for="custom-word-input" class="block text-sm font-medium text-gray-600">Custom Secret Word (Host Only)</label>
+                        <input type="text" id="custom-word-input" class="w-full p-2 neu-inset neu-input" placeholder="Leave blank for random">
+                    </div>
+                    <div>
+                        <label for="custom-theme-input" class="block text-sm font-medium text-gray-600">Theme (Optional)</label>
+                        <input type="text" id="custom-theme-input" class="w-full p-2 neu-inset neu-input" placeholder="e.g., Football Players">
+                    </div>
+                    <div class="flex gap-2 pt-2">
+                        <button id="set-custom-word-button" class="p-2 neu-button neu-outset-sm rounded-lg neu-button-green">Set</button>
+                        <button id="clear-custom-word-button" class_name="p-2 neu-button neu-outset-sm rounded-lg neu-button-gray">Clear</button>
                     </div>
                 </div>
 
-                <h4 class="text-lg text-white mb-2">Players:</h4>
+                <h4 class="text-lg text-gray-800 mb-2">Players:</h4>
                 <ul id="lobby-player-list" class="space-y-2 mb-4">
                     <!-- Player list injected by JS -->
                 </ul>
-                <button id="start-game-button" class_name="w-full p-3 bg-red-600 hover:bg-red-700 rounded-lg text-white font-bold transition-colors shadow-lg hidden">
+                <button id="start-game-button" class="w-full p-3 rounded-lg neu-button neu-outset neu-button-red hidden">
                     Start Game (Host Only)
                 </button>
             </div>
@@ -1130,24 +1175,25 @@
     <section id="game-section" class="hidden h-full flex flex-col p-4 md:p-8">
         <div class="flex-shrink-0 mb-4">
             <!-- Top Bar -->
-            <div class="glass-card flex justify-between items-center p-4 rounded-2xl">
+            <div class="neu-outset flex justify-between items-center p-4 rounded-2xl">
                 <div>
-                    <h1 class="text-2xl font-bold text-white">Infiltrados</h1>
-                    <div id="game-id-display" class="text-sm font-mono text-indigo-300"></div>
+                    <h1 class="text-2xl font-bold text-gray-800">Infiltrados</h1>
+                    <div id="game-id-display" class="text-sm font-mono text-indigo-500"></div>
+                    <div id="game-theme-display" class="text-md font-semibold text-gray-700"></div> <!-- NEW: Theme Display -->
                 </div>
                 <div class="text-right">
                     <!-- UPDATED: Role display is now hidden by default -->
-                    <div id="game-info-role" class="text-lg font-bold text-gray-300">Your Role: [Hidden]</div>
-                    <div id="game-info-word" class="text-sm text-gray-300 hidden"></div>
-                    <!-- NEW: Reveal Role Button -->
-                    <button id="reveal-role-button" class="mt-1 p-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium select-none cursor-pointer shadow-lg">
-                        Press and Hold to See Role
+                    <div id="game-info-role" class="text-lg font-bold text-gray-700">Your Role: [Hidden]</div>
+                    <div id="game-info-word" class="text-sm text-gray-600 hidden"></div>
+                    <!-- UPDATED: Reveal Role Button (Toggle) -->
+                    <button id="reveal-role-button" class="mt-1 p-2 neu-button neu-outset-sm rounded-lg text-sm neu-button-blue">
+                        Show Role
                     </button>
                 </div>
-                <button id="leave-game-button" class="p-2 bg-gray-700/50 hover:bg-gray-600/50 rounded-lg text-sm font-medium border border-white/10">Leave Game</button>
+                <button id="leave-game-button" class="p-2 neu-button neu-outset-sm rounded-lg text-sm neu-button-gray">Leave Game</button>
             </div>
             <!-- Status Bar -->
-            <div id="game-status" class="text-center text-xl font-semibold text-yellow-300 p-4">
+            <div id="game-status" class="text-center text-xl font-semibold text-yellow-600 p-4">
                 Loading game...
             </div>
         </div>
@@ -1156,31 +1202,31 @@
         <div class="flex-grow grid grid-cols-1 lg:grid-cols-4 gap-6 min-h-0">
             
             <!-- Players -->
-            <div class="glass-card p-4 rounded-2xl">
-                <h3 class="text-lg font-semibold text-white mb-3 border-b border-white/10 pb-2">Players</h3>
+            <div class="neu-outset p-4 rounded-2xl">
+                <h3 class="text-lg font-semibold text-gray-800 mb-3 border-b border-gray-300 pb-2">Players</h3>
                 <ul id="game-player-list" class="space-y-2">
                     <!-- Player list injected by JS -->
                 </ul>
             </div>
             
             <!-- Words -->
-            <div class="glass-card p-4 rounded-2xl lg:col-span-2 flex flex-col">
-                <h3 class="text-lg font-semibold text-white mb-3 border-b border-white/10 pb-2">Word List</h3>
+            <div class="neu-outset p-4 rounded-2xl lg:col-span-2 flex flex-col">
+                <h3 class="text-lg font-semibold text-gray-800 mb-3 border-b border-gray-300 pb-2">Word List</h3>
                 <ul id="game-word-list" class="flex-grow space-y-2 overflow-y-auto h-64 md:h-auto p-1">
                     <!-- Word list injected by JS -->
                 </ul>
                 <!-- Word Input -->
                 <div id="word-input-container" class="mt-4 flex gap-2 hidden">
-                    <input type="text" id="word-input" class="flex-grow p-3 glass-input" placeholder="Your word...">
-                    <button id="submit-word-button" class="p-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-bold transition-colors shadow-lg">
+                    <input type="text" id="word-input" class="flex-grow p-3 neu-inset neu-input" placeholder="Your word...">
+                    <button id="submit-word-button" class="p-3 rounded-lg neu-button neu-outset text-indigo-600">
                         Submit
                     </button>
                 </div>
             </div>
             
             <!-- Log -->
-            <div class="glass-card p-4 rounded-2xl">
-                <h3 class="text-lg font-semibold text-white mb-3 border-b border-white/10 pb-2">Game Log</h3>
+            <div class="neu-outset p-4 rounded-2xl">
+                <h3 class="text-lg font-semibold text-gray-800 mb-3 border-b border-gray-300 pb-2">Game Log</h3>
                 <ul id="game-log" class="space-y-1 overflow-y-auto h-64 md:h-auto max-h-72"> <!-- Height Reduced -->
                     <!-- Log entries injected by JS -->
                 </ul>
@@ -1190,9 +1236,9 @@
     </section>
     
     <!-- Voting Modal -->
-    <div id="voting-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-        <div class="glass-modal p-8 rounded-2xl shadow-xl w-full max-w-md">
-            <h2 class="text-3xl font-bold text-white text-center mb-6">Vote to Eliminate!</h2>
+    <div id="voting-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div class="neu-outset p-8 rounded-2xl shadow-xl w-full max-w-md">
+            <h2 class="text-3xl font-bold text-gray-800 text-center mb-6">Vote to Eliminate!</h2>
             <div id="voting-player-buttons" class="space-y-3">
                 <!-- Voting buttons injected by JS -->
             </div>
@@ -1200,16 +1246,16 @@
     </div>
     
     <!-- Game Over Modal -->
-    <div id="game-over-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-        <div class="glass-modal p-8 rounded-2xl shadow-xl w-full max-w-md text-center">
-            <h2 id="game-over-winner" class="text-4xl font-bold text-yellow-300 mb-4"></h2>
-            <p id="game-over-secret-word" class="text-xl text-white mb-2"></p>
-            <p id="game-over-infiltrados" class="text-lg text-red-400 mb-8"></p>
+    <div id="game-over-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div class="neu-outset p-8 rounded-2xl shadow-xl w-full max-w-md text-center">
+            <h2 id="game-over-winner" class="text-4xl font-bold text-yellow-600 mb-4"></h2>
+            <p id="game-over-secret-word" class="text-xl text-gray-800 mb-2"></p>
+            <p id="game-over-infiltrados" class="text-lg text-red-600 mb-8"></p>
             
-            <button id="play-again-button" class="w-full p-3 mb-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-bold transition-colors shadow-lg hidden">
+            <button id="play-again-button" class="w-full p-3 mb-3 rounded-lg neu-button neu-outset text-indigo-600 hidden">
                 Play Again (Host)
             </button>
-            <p class="text-sm text-gray-300">Wait for the host to start a new game.</p>
+            <p class="text-sm text-gray-600">Wait for the host to start a new game.</p>
         </div>
     </div>
 
