@@ -1,0 +1,1302 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-900">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infiltrados 3D Stack</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Load 3D Libraries (from stack.html) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r124/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/2.1.3/TweenLite.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/2.1.3/plugins/CSSPlugin.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/2.1.3/easing/EasePack.min.js"></script>
+    
+    <!-- Load Google Font (for 3D text) -->
+    <link href="https://fonts.googleapis.com/css?family=Comfortaa" rel="stylesheet">
+    
+    <!-- Load Firebase JS SDKs -->
+    <script type="module">
+        // --- Firebase Imports ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInAnonymously, 
+            onAuthStateChanged,
+            signInWithCustomToken
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            setDoc, 
+            getDoc, 
+            onSnapshot, 
+            updateDoc,
+            arrayUnion,
+            setLogLevel
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- App State ---
+        let db, auth, app;
+        let currentUserId = null;
+        let currentUsername = "Player";
+        let currentGameId = null;
+        let gameUnsubscribe = null; // To stop listening to game updates
+        let localGameData = {}; // Local cache of game state
+        let isHost = false;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'infiltrados-game';
+
+        // --- 3D Stack State ---
+        let threeStage = null;
+        let stackedBlocks = []; // Will hold instances of the Block class
+        let gameResizeObserver = null;
+        let is3DInitialized = false;
+        let animationFrameId = null;
+
+        // --- DOM Elements ---
+        const $ = (selector) => document.querySelector(selector);
+        const $$ = (selector) => document.querySelectorAll(selector);
+
+        // Page Sections
+        const loginSection = $("#login-section");
+        const lobbySection = $("#lobby-section");
+        const gameSection = $("#game-section");
+        
+        // Login
+        const usernameInput = $("#username-input");
+        const setUsernameButton = $("#set-username-button");
+        const loginError = $("#login-error");
+
+        // Lobby
+        const createGameButton = $("#create-game-button");
+        const joinGameButton = $("#join-game-button");
+        const gameIdInput = $("#game-id-input");
+        const lobbyGameIdDisplay = $("#lobby-game-id");
+        const lobbyPlayerList = $("#lobby-player-list");
+        const startGameButton = $("#start-game-button");
+
+        // Game Settings (Lobby)
+        const totalPlayersSelect = $("#total-players-select");
+        const infiltradosSelect = $("#infiltrados-select");
+        const roundsBeforeVoteSelect = $("#rounds-before-vote-select");
+        
+        // Game
+        const gameInfoRole = $("#game-info-role");
+        const gameInfoWord = $("#game-info-word");
+        const gameStatus = $("#game-status");
+        // const gameWordList = $("#game-word-list"); // <-- This is now the 3D canvas
+        const gamePlayerList = $("#game-player-list");
+        const gameLog = $("#game-log");
+        const wordInputContainer = $("#word-input-container");
+        const wordInput = $("#word-input");
+        const submitWordButton = $("#submit-word-button");
+        const gameIdDisplay = $("#game-id-display");
+
+        // Modals
+        const votingModal = $("#voting-modal");
+        const votingPlayerButtons = $("#voting-player-buttons");
+        const gameOverModal = $("#game-over-modal");
+        const gameOverWinner = $("#game-over-winner");
+        const gameOverSecretWord = $("#game-over-secret-word");
+        const gameOverInfiltrados = $("#game-over-infiltrados");
+        const leaveGameButton = $("#leave-game-button");
+        const playAgainButton = $("#play-again-button");
+
+        // --- Secret Word List ---
+        const SECRET_WORDS = [
+            "Hospital", "School", "Restaurant", "Airport", "Museum", "Beach",
+            "Mountain", "Forest", "Office", "Supermarket", "Pharmacy", "Library",
+            "Park", "Zoo", "Aquarium", "Cinema", "Theater", "Gym", "Stadium",
+            "Farm", "Factory", "Police Station", "Fire Station", "Post Office"
+        ];
+
+        // --- 3D STACK CLASSES (from stack.html, modified) ---
+
+        /**
+         * Represents the 3D rendering stage (scene, camera, renderer).
+         * Modified to attach to a specific container ID and resize based on it.
+         */
+        class Stage {
+            constructor(containerId) {
+                // container
+                this.container = document.getElementById(containerId);
+                if (!this.container) {
+                    console.error("3D Stage container not found:", containerId);
+                    return;
+                }
+
+                // renderer
+                this.renderer = new THREE.WebGLRenderer({
+                    antialias: true,
+                    alpha: true // Use alpha for transparent background
+                });
+                this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+                this.renderer.setClearColor(0x000000, 0); // Transparent background
+                this.container.appendChild(this.renderer.domElement);
+
+                // scene
+                this.scene = new THREE.Scene();
+
+                // camera
+                let aspect = this.container.clientWidth / this.container.clientHeight;
+                let d = 20;
+                this.camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, -100, 1000);
+                this.camera.position.x = 2;
+                this.camera.position.y = 2;
+                this.camera.position.z = 2;
+                this.camera.lookAt(new THREE.Vector3(0, 0, 0));
+
+                //light
+                this.light = new THREE.DirectionalLight(0xffffff, 0.5);
+                this.light.position.set(0, 499, 0);
+                this.scene.add(this.light);
+
+                this.softLight = new THREE.AmbientLight(0xffffff, 0.4);
+                this.scene.add(this.softLight);
+
+                window.addEventListener('resize', () => this.onResize());
+                this.onResize();
+            }
+
+            setCamera(y, speed = 0.3) {
+                TweenLite.to(this.camera.position, speed, { y: y + 4, ease: Power1.easeInOut });
+                TweenLite.to(this.camera.lookAt, speed, { y: y, ease: Power1.easeInOut });
+            }
+
+            onResize() {
+                if (!this.container) return;
+                
+                const width = this.container.clientWidth;
+                const height = this.container.clientHeight;
+
+                if (width === 0 || height === 0) return;
+
+                this.renderer.setSize(width, height);
+                
+                let viewSize = 30; // From original game
+                this.camera.left = width / -viewSize;
+                this.camera.right = width / viewSize;
+                this.camera.top = height / viewSize;
+                this.camera.bottom = height / -viewSize;
+                this.camera.updateProjectionMatrix();
+            }
+
+            render = function () {
+                if (this.renderer) {
+                    this.renderer.render(this.scene, this.camera);
+                }
+            }
+
+            add = function (elem) {
+                this.scene.add(elem);
+            }
+
+            remove = function (elem) {
+                this.scene.remove(elem);
+            }
+        }
+
+        /**
+         * Represents a single 3D block in the stack.
+         * Modified to be a static (non-moving) block with a dynamic text texture.
+         */
+        class Block {
+            constructor(block) {
+                // Define instance properties
+                this.STATES = { ACTIVE: 'active', STOPPED: 'stopped', MISSED: 'missed' };
+                this.dimension = { width: 0, height: 0, depth: 0 };
+                this.position = { x: 0, y: 0, z: 0 };
+                this.mesh;
+                this.state;
+                this.index;
+                this.colorOffset;
+                this.color;
+                this.material;
+                this.targetBlock;
+                
+                this.targetBlock = block;
+                this.index = (this.targetBlock ? this.targetBlock.index : 0) + 1;
+
+                // All blocks will be the same size and centered
+                this.dimension.width = 10;
+                this.dimension.height = 2;
+                this.dimension.depth = 10;
+
+                this.position.x = 0; // Centered
+                this.position.y = this.dimension.height * this.index;
+                this.position.z = 0; // Centered
+
+                this.colorOffset = this.targetBlock ? this.targetBlock.colorOffset : Math.round(Math.random() * 100);
+
+                // set color
+                if (!this.targetBlock) {
+                    this.color = 0x333344; // Base block
+                } else {
+                    let offset = this.index + this.colorOffset;
+                    var r = Math.sin(0.3 * offset) * 55 + 200;
+                    var g = Math.sin(0.3 * offset + 2) * 55 + 200;
+                    var b = Math.sin(0.3 * offset + 4) * 55 + 200;
+                    this.color = new THREE.Color(r / 255, g / 255, b / 255);
+                }
+
+                // state is always STOPPED
+                this.state = this.STATES.STOPPED;
+
+                // create block
+                let geometry = new THREE.BoxGeometry(this.dimension.width, this.dimension.height, this.dimension.depth);
+                
+                // Create a blank texture for now
+                const canvas = this.createWordTexture('Loading...');
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.minFilter = THREE.LinearFilter;
+                texture.wrapS = THREE.ClampToEdgeWrapping;
+                texture.wrapT = THREE.ClampToEdgeWrapping;
+                
+                const materials = [
+                    new THREE.MeshToonMaterial({ color: this.color, shading: THREE.FlatShading }), // right
+                    new THREE.MeshToonMaterial({ color: this.color, shading: THREE.FlatShading }), // left
+                    new THREE.MeshToonMaterial({ color: this.color, shading: THREE.FlatShading }), // top
+                    new THREE.MeshToonMaterial({ color: this.color, shading: THREE.FlatShading }), // bottom
+                    new THREE.MeshToonMaterial({ map: texture, color: 0xffffff, shading: THREE.FlatShading }), // front
+                    new THREE.MeshToonMaterial({ color: this.color, shading: THREE.FlatShading })  // back
+                ];
+                
+                this.material = materials; // This is now an array
+                this.mesh = new THREE.Mesh(geometry, this.material);
+                this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+            }
+            
+            // Helper function to create text texture
+            createWordTexture(wordText) {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                // Canvas dimensions for the texture
+                canvas.width = 512;
+                canvas.height = 102; // Proportional to block height (2)
+                
+                ctx.fillStyle = '#FFFFFF'; // Background color of the text face
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                ctx.font = 'bold 36px Comfortaa, cursive'; // Use Comfortaa font
+                ctx.fillStyle = '#333344'; // Text color
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                // Truncate text if too long
+                let maxWidth = canvas.width - 20; // 10px padding
+                let text = wordText;
+                if(ctx.measureText(text).width > maxWidth) {
+                    while(ctx.measureText(text + '...').width > maxWidth) {
+                        text = text.substring(0, text.length - 1);
+                    }
+                    text = text + '...';
+                }
+                
+                ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+                
+                return canvas;
+            }
+
+            // Public method to update the block's text
+            updateWord(wordData) {
+                const text = `${wordData.name}: ${wordData.word}`;
+                const canvas = this.createWordTexture(text);
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.minFilter = THREE.LinearFilter;
+                texture.wrapS = THREE.ClampToEdgeWrapping;
+                texture.wrapT = THREE.ClampToEdgeWrapping;
+                
+                // Update the material (index 4 is 'front')
+                this.mesh.material[4].map = texture;
+                this.mesh.material[4].needsUpdate = true;
+            }
+        }
+        
+        // --- 3D STACK HELPER FUNCTIONS ---
+
+        /**
+         * Initializes the 3D stage, creates the base block, and starts the render loop.
+         */
+        function init3DStack() {
+            if (is3DInitialized) return;
+            
+            const container = $("#game-canvas-container");
+            if (!container) return;
+            
+            try {
+                threeStage = new Stage("game-canvas-container");
+                
+                // Add the base block
+                const baseBlock = new Block(null);
+                baseBlock.updateWord( { name: 'Infiltrados', word: 'Game Start' } );
+                stackedBlocks.push(baseBlock);
+                threeStage.add(baseBlock.mesh);
+                threeStage.setCamera(baseBlock.position.y + 6);
+                
+                // Handle resizing
+                if (gameResizeObserver) gameResizeObserver.disconnect();
+                gameResizeObserver = new ResizeObserver(entries => {
+                    if (threeStage) {
+                        threeStage.onResize();
+                    }
+                });
+                gameResizeObserver.observe(container);
+                
+                threeStage.onResize(); // Initial resize
+                
+                is3DInitialized = true;
+                animate3DStack(); // Start render loop
+                console.log("3D Stack Initialized");
+            } catch (error) {
+                console.error("Error initializing 3D stack:", error);
+                showError("Could not load 3D visual.");
+            }
+        }
+
+        /**
+         * The main render loop for the 3D scene.
+         */
+        function animate3DStack() {
+            if (!is3DInitialized) return;
+            animationFrameId = requestAnimationFrame(animate3DStack);
+            if (threeStage) {
+                threeStage.render();
+            }
+        }
+
+        /**
+         * Stops the render loop, cleans up the scene, and removes the canvas.
+         */
+        function stop3DStack() {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+            if (gameResizeObserver) {
+                gameResizeObserver.disconnect();
+                gameResizeObserver = null;
+            }
+            const container = $("#game-canvas-container");
+            if (container) {
+                container.innerHTML = ""; // Clear canvas
+            }
+            threeStage = null;
+            stackedBlocks = [];
+            is3DInitialized = false;
+            console.log("3D Stack Stopped");
+        }
+
+        /**
+         * Compares the Firestore word list with the on-screen blocks and adds any missing blocks.
+         */
+        function syncStackWithWords(words) {
+            if (!is3DInitialized) return;
+
+            const wordsInFirebase = words.length;
+            // How many blocks *on top of the base* do we have?
+            const blocksOnStack = stackedBlocks.length - 1;
+
+            if (wordsInFirebase === blocksOnStack) {
+                // In sync, do nothing
+                return;
+            }
+
+            // On "Play Again", wordsInFirebase will be 0, blocksOnStack > 0
+            if (wordsInFirebase < blocksOnStack) {
+                console.log("Word count mismatch (resetting), rebuilding stack.");
+                stop3DStack();
+                init3DStack();
+                // After init, blocksOnStack will be 0, and we fall through to add blocks
+            }
+            
+            // Re-check after potential reset
+            const currentBlocksOnStack = stackedBlocks.length - 1;
+            
+            // Add missing blocks
+            let lastBlock = stackedBlocks[stackedBlocks.length - 1];
+            
+            for (let i = currentBlocksOnStack; i < wordsInFirebase; i++) {
+                const newWordData = words[i];
+                const newBlock = new Block(lastBlock); // Create new block
+                newBlock.updateWord(newWordData); // Set its text
+                
+                stackedBlocks.push(newBlock);
+                threeStage.add(newBlock.mesh);
+                
+                lastBlock = newBlock; // Update for next loop
+            }
+            
+            // Update camera
+            if (lastBlock) {
+                threeStage.setCamera(lastBlock.position.y + 6);
+            }
+        }
+
+        // --- Helper function for correct Firestore path ---
+        function getGameDocRef(gameId) {
+            // /artifacts/{appId}/public/data/games/{gameId}
+            return doc(db, "artifacts", appId, "public", "data", "games", gameId);
+        }
+
+        // --- Firebase Initialization ---
+        async function initFirebase() {
+            try {
+                // Config from your index.html
+                const firebaseConfig = {
+                    apiKey: "AIzaSyAG6v0TT9miam83wXOB4aqdqD6qbc5GhPo",
+                    authDomain: "infiltrados-game.firebaseapp.com",
+                    projectId: "infiltrados-game",
+                    storageBucket: "infiltrados-game.firebasestorage.app",
+                    messagingSenderId: "742547669169",
+                    appId: "1:742547669169:web:68ee3277c5fb077647a290"
+                };
+                
+                if (!firebaseConfig.apiKey) {
+                    showError("Firebase config is missing. App cannot start.");
+                    return;
+                }
+
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                setLogLevel('debug'); // Enable verbose logging
+
+                // --- Auth Handling ---
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        currentUserId = user.uid;
+                        console.log("User signed in:", currentUserId);
+                        loginSection.classList.add("hidden");
+                        lobbySection.classList.remove("hidden");
+                    } else {
+                        // No user, try to sign in
+                        try {
+                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                                await signInWithCustomToken(auth, __initial_auth_token);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                        } catch (authError) {
+                            console.error("Anonymous sign-in failed:", authError);
+                            showError("Failed to connect. Please refresh.");
+                        }
+                    }
+                });
+
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+                showError("Fatal Error: Could not initialize app. Check console.");
+            }
+        }
+
+        // --- UI State Management ---
+        function showSection(section) {
+            [loginSection, lobbySection, gameSection].forEach(s => s.classList.add("hidden"));
+            if (section === "login") loginSection.classList.remove("hidden");
+            if (section === "lobby") lobbySection.classList.remove("hidden");
+            if (section === "game") gameSection.classList.remove("hidden");
+        }
+
+        function showError(message) {
+            console.error("ERROR:", message);
+            gameStatus.textContent = `Error: ${message}`;
+            gameStatus.classList.add("text-red-400");
+        }
+
+        // --- Game Logic ---
+
+        function generateGameId() {
+            return Math.random().toString(36).substring(2, 8).toUpperCase();
+        }
+
+        function handleUsername() {
+            loginError.textContent = ""; 
+            const username = usernameInput.value.trim();
+            if (username.length >= 2) {
+                currentUsername = username;
+                usernameInput.disabled = true;
+                setUsernameButton.textContent = "Welcome!";
+                setUsernameButton.disabled = true;
+                initFirebase();
+            } else {
+                loginError.textContent = "Please enter a name (min 2 chars).";
+            }
+        }
+
+        async function createGame() {
+            if (!currentUserId) return showError("Not authenticated.");
+
+            const gameId = generateGameId();
+            currentGameId = gameId;
+            isHost = true;
+
+            const settings = {
+                totalPlayers: parseInt(totalPlayersSelect.value),
+                infiltradosCount: parseInt(infiltradosSelect.value),
+                roundsBeforeVote: parseInt(roundsBeforeVoteSelect.value),
+            };
+
+            const gameDoc = {
+                gameId: gameId,
+                hostId: currentUserId,
+                state: "lobby", 
+                settings: settings,
+                players: {
+                    [currentUserId]: {
+                        name: currentUsername,
+                        isAlive: true,
+                        role: null,
+                        vote: null
+                    }
+                },
+                secretWord: "",
+                turn: null,
+                round: 1, 
+                gameTurn: 1,
+                words: [], 
+                log: [`Game created by ${currentUsername}`],
+                winner: null
+            };
+
+            try {
+                const gameRef = getGameDocRef(gameId); 
+                await setDoc(gameRef, gameDoc);
+                console.log("Game created with ID:", gameId);
+                await subscribeToGame(gameId);
+            } catch (error) {
+                console.error("Error creating game:", error);
+                showError("Could not create game.");
+            }
+        }
+
+        async function joinGame() {
+            if (!currentUserId) return showError("Not authenticated.");
+
+            const gameId = gameIdInput.value.trim().toUpperCase();
+            if (!gameId) return showError("Please enter a Game ID.");
+
+            const gameRef = getGameDocRef(gameId);
+            const gameSnap = await getDoc(gameRef);
+
+            if (!gameSnap.exists()) {
+                return showError("Game not found.");
+            }
+
+            const gameData = gameSnap.data();
+            
+            if (gameData.state !== "lobby") {
+                return showError("Game has already started.");
+            }
+
+            if (Object.keys(gameData.players).length >= gameData.settings.totalPlayers) {
+                return showError("Game is full.");
+            }
+            
+            if (gameData.players[currentUserId]) {
+                 console.log("Rejoining lobby...");
+            } else {
+                const playerKey = `players.${currentUserId}`;
+                const newPlayer = {
+                    name: currentUsername,
+                    isAlive: true,
+                    role: null,
+                    vote: null
+                };
+                
+                try {
+                    await updateDoc(gameRef, { 
+                        [playerKey]: newPlayer,
+                        log: arrayUnion(`${currentUsername} joined the lobby.`)
+                    });
+                    console.log("Joined game:", gameId);
+                } catch (error) {
+                    console.error("Error joining game:", error);
+                    return showError("Could not join game.");
+                }
+            }
+
+            currentGameId = gameId;
+            isHost = (gameData.hostId === currentUserId);
+            await subscribeToGame(gameId);
+        }
+
+        async function subscribeToGame(gameId) {
+            if (gameUnsubscribe) {
+                gameUnsubscribe();
+            }
+            
+            const gameRef = getGameDocRef(gameId); 
+            gameUnsubscribe = onSnapshot(gameRef, (docSnap) => {
+                if (!docSnap.exists()) {
+                    showError("Game not found or was deleted.");
+                    leaveGame();
+                    return;
+                }
+
+                const gameData = docSnap.data();
+                localGameData = gameData; // Cache game data
+                updateUI(gameData);
+
+                // --- Host-Only Logic ---
+                if (isHost) {
+                    if (gameData.state === "voting" && didAllAlivePlayersVote(gameData)) {
+                        tallyVotes(gameData);
+                    }
+                    if (gameData.state === "word_round" && shouldRoundEnd(gameData)) {
+                        startVoting(gameData);
+                    }
+                }
+
+            }, (error) => {
+                console.error("Snapshot error:", error);
+                showError("Connection to game lost.");
+            });
+        }
+
+        function leaveGame() {
+            if (gameUnsubscribe) {
+                gameUnsubscribe();
+                gameUnsubscribe = null;
+            }
+            
+            stop3DStack(); // <-- Clean up 3D scene
+            
+            currentGameId = null;
+            isHost = false;
+            localGameData = {};
+            showSection("lobby");
+            lobbyGameIdDisplay.textContent = "";
+            lobbyPlayerList.innerHTML = "";
+            gameIdInput.value = "";
+        }
+
+        async function startGame() {
+            if (!isHost || !currentGameId) return;
+
+            const gameData = localGameData;
+            const playerIds = Object.keys(gameData.players);
+
+            if (playerIds.length !== gameData.settings.totalPlayers) {
+                return showError(`Waiting for ${gameData.settings.totalPlayers} players. Currently have ${playerIds.length}.`);
+            }
+            
+            const { infiltradosCount } = gameData.settings;
+            const newPlayers = { ...gameData.players };
+            const shuffledPlayerIds = playerIds.sort(() => 0.5 - Math.random());
+            
+            const infiltradoIds = [];
+            
+            for (let i = 0; i < shuffledPlayerIds.length; i++) {
+                const id = shuffledPlayerIds[i];
+                if (i < infiltradosCount) {
+                    newPlayers[id].role = "Infiltrado";
+                    infiltradoIds.push(newPlayers[id].name); 
+                } else {
+                    newPlayers[id].role = "Regular";
+                }
+            }
+
+            const secretWord = SECRET_WORDS[Math.floor(Math.random() * SECRET_WORDS.length)];
+            const startPlayerId = shuffledPlayerIds[Math.floor(Math.random() * shuffledPlayerIds.length)];
+
+            try {
+                const gameRef = getGameDocRef(currentGameId); 
+                await updateDoc(gameRef, {
+                    state: "word_round",
+                    players: newPlayers,
+                    secretWord: secretWord,
+                    turn: startPlayerId,
+                    round: 1,
+                    gameTurn: 1,
+                    words: [],
+                    log: arrayUnion("Game started! Roles assigned. It's time to speak.")
+                });
+            } catch (error) {
+                console.error("Error starting game:", error);
+                showError("Could not start game.");
+            }
+        }
+        
+        // --- In-Game Actions ---
+
+        async function submitWord() {
+            const word = wordInput.value.trim();
+            if (word.length < 2 || word.includes(" ")) {
+                return showError("Please enter a single, valid word.");
+            }
+            
+            if (localGameData.turn !== currentUserId) {
+                return showError("It's not your turn!");
+            }
+
+            const { players, round, settings, gameTurn } = localGameData;
+            const totalAlive = Object.values(players).filter(p => p.isAlive).length;
+            const wordsThisRound = localGameData.words.filter(w => w.gameTurn === gameTurn && w.round === round).length;
+
+            const nextPlayer = findNextAlivePlayer(currentUserId);
+            let nextRound = round;
+            let nextState = "word_round";
+            let nextTurn = nextPlayer;
+            
+            if (wordsThisRound + 1 === totalAlive) {
+                nextRound = round + 1;
+                nextTurn = findNextAlivePlayer(nextPlayer, true, localGameData.turn); 
+            }
+
+            try {
+                const gameRef = getGameDocRef(currentGameId); 
+                await updateDoc(gameRef, {
+                    state: nextState,
+                    turn: nextTurn,
+                    round: nextRound,
+                    words: arrayUnion({
+                        player: currentUserId,
+                        name: players[currentUserId].name,
+                        word: word,
+                        round: round,
+                        gameTurn: gameTurn
+                    })
+                });
+                wordInput.value = "";
+            } catch (error) {
+                console.error("Error submitting word:", error);
+                showError("Could not submit word.");
+            }
+        }
+        
+        // Host-only check
+        function shouldRoundEnd(gameData) {
+            const { players, round, settings, gameTurn, words } = gameData;
+            
+            if (round > 1 && (round - 1) % settings.roundsBeforeVote === 0) {
+                 const totalAlive = Object.values(players).filter(p => p.isAlive).length;
+                 const wordsInLastRound = words.filter(w => w.gameTurn === gameTurn && w.round === (round - 1)).length;
+                 
+                 if (wordsInLastRound === totalAlive) {
+                    return true;
+                 }
+            }
+            return false;
+        }
+
+        // Host-only action
+        async function startVoting(gameData) {
+            const playerUpdates = {};
+            Object.keys(gameData.players).forEach(id => {
+                if (gameData.players[id].isAlive) {
+                    playerUpdates[`players.${id}.vote`] = null;
+                }
+            });
+            
+            try {
+                const gameRef = getGameDocRef(currentGameId); 
+                await updateDoc(gameRef, {
+                    ...playerUpdates,
+                    state: "voting",
+                    turn: null, 
+                    log: arrayUnion(`--- Time to Vote (Turn ${gameData.gameTurn}) ---`)
+                });
+            } catch (error) {
+                console.error("Error starting vote:", error);
+            }
+        }
+
+        async function submitVote(votedPlayerId) {
+            if (localGameData.state !== "voting" || !localGameData.players[currentUserId].isAlive) {
+                return showError("You can't vote right now.");
+            }
+            
+            votingModal.classList.add("hidden");
+            
+            try {
+                const gameRef = getGameDocRef(currentGameId); 
+                await updateDoc(gameRef, {
+                    [`players.${currentUserId}.vote`]: votedPlayerId
+                });
+            } catch (error) {
+                console.error("Error submitting vote:", error);
+            }
+        }
+
+        // Host-only check
+        function didAllAlivePlayersVote(gameData) {
+            return Object.values(gameData.players).every(p => !p.isAlive || p.vote !== null);
+        }
+
+        // Host-only action
+        async function tallyVotes(gameData) {
+            const votes = {};
+            let tiedPlayers = [];
+            let maxVotes = 0;
+            
+            Object.values(gameData.players).forEach(p => {
+                if (p.isAlive && p.vote) {
+                    votes[p.vote] = (votes[p.vote] || 0) + 1;
+                }
+            });
+
+            for (const playerId in votes) {
+                if (votes[playerId] > maxVotes) {
+                    maxVotes = votes[playerId];
+                }
+            }
+
+            for (const playerId in votes) {
+                if (votes[playerId] === maxVotes) {
+                    tiedPlayers.push(playerId);
+                }
+            }
+            
+            let eliminatedPlayerId;
+            let logMessage;
+
+            if (tiedPlayers.length === 0) {
+                 console.warn("No votes cast? Defaulting to random elim.");
+                 const alivePlayers = Object.keys(gameData.players).filter(id => gameData.players[id].isAlive);
+                 eliminatedPlayerId = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
+                 logMessage = "No votes were cast! By random choice,";
+                 
+            } else if (tiedPlayers.length === 1) {
+                eliminatedPlayerId = tiedPlayers[0];
+                logMessage = "The votes are in!";
+            } else {
+                eliminatedPlayerId = tiedPlayers[Math.floor(Math.random() * tiedPlayers.length)];
+                logMessage = `A tie! By random choice,`;
+            }
+
+            const eliminatedPlayer = gameData.players[eliminatedPlayerId];
+            logMessage += ` ${eliminatedPlayer.name} is eliminated.`;
+            const revealMessage = `${eliminatedPlayer.name} was... an ${eliminatedPlayer.role}!`;
+
+            const finalPlayerCounts = { ...gameData.players };
+            finalPlayerCounts[eliminatedPlayerId].isAlive = false;
+            
+            let finalRegulars = 0;
+            let finalInfiltrados = 0;
+            Object.values(finalPlayerCounts).forEach(p => {
+                if (p.isAlive) {
+                    if (p.role === "Regular") finalRegulars++;
+                    if (p.role === "Infiltrado") finalInfiltrados++;
+                }
+            });
+            
+            let nextState = "word_round";
+            let winner = null;
+            
+            if (finalInfiltrados === 0) {
+                nextState = "game_over";
+                winner = "Regulars";
+                logMessage = "The last Infiltrado is out!";
+            } else if (finalInfiltrados >= finalRegulars) {
+                nextState = "game_over";
+                winner = "Infiltrados";
+                logMessage = "The Infiltrados can no longer be outvoted!";
+            }
+
+            const nextTurnPlayer = findNextAlivePlayer(eliminatedPlayerId, false, gameData.turn);
+
+            try {
+                const gameRef = getGameDocRef(currentGameId); 
+                await updateDoc(gameRef, {
+                    [`players.${eliminatedPlayerId}.isAlive`]: false,
+                    state: nextState,
+                    winner: winner,
+                    turn: nextTurnPlayer,
+                    gameTurn: gameData.gameTurn + 1,
+                    log: arrayUnion(logMessage, revealMessage)
+                });
+
+            } catch (error) {
+                console.error("Error in tallyVotes:", error);
+            }
+        }
+        
+        async function playAgain() {
+            if (!isHost) return;
+            
+            const newPlayers = { ...localGameData.players };
+            Object.keys(newPlayers).forEach(id => {
+                newPlayers[id].isAlive = true;
+                newPlayers[id].role = null;
+                newPlayers[id].vote = null;
+            });
+            
+            try {
+                 const gameRef = getGameDocRef(currentGameId); 
+                 await updateDoc(gameRef, {
+                    state: "lobby",
+                    players: newPlayers,
+                    secretWord: "",
+                    turn: null,
+                    round: 1,
+                    gameTurn: 1,
+                    words: [],
+                    log: ["Host started a new game!"],
+                    winner: null
+                 });
+            } catch(error) {
+                console.error("Error playing again:", error);
+            }
+        }
+
+        // --- UI Update Function ---
+        function updateUI(gameData) {
+            const myPlayerData = gameData.players[currentUserId];
+            const amIAlive = myPlayerData && myPlayerData.isAlive;
+
+            // --- Lobby Section ---
+            if (gameData.state === "lobby") {
+                showSection("lobby");
+                lobbyGameIdDisplay.textContent = `Game ID: ${gameData.gameId}`;
+                
+                const playerNames = Object.values(gameData.players).map(p => p.name);
+                lobbyPlayerList.innerHTML = playerNames.map(name => 
+                    `<li class="bg-gray-700 p-2 rounded">${name}</li>`
+                ).join("");
+                
+                startGameButton.classList.toggle("hidden", !isHost);
+                $$(".host-setting").forEach(el => el.disabled = !isHost);
+                if (isHost) {
+                    totalPlayersSelect.value = gameData.settings.totalPlayers;
+                    infiltradosSelect.value = gameData.settings.infiltradosCount;
+                    roundsBeforeVoteSelect.value = gameData.settings.roundsBeforeVote;
+                }
+            }
+            
+            // --- Game Section ---
+            if (gameData.state !== "lobby") {
+                showSection("game");
+                
+                gameIdDisplay.textContent = `Game ID: ${gameData.gameId}`;
+
+                // My Info
+                if (myPlayerData) {
+                    gameInfoRole.textContent = myPlayerData.role || "Role not assigned";
+                    gameInfoRole.className = myPlayerData.role === "Infiltrado" ? "text-red-400 font-bold" : "text-green-400 font-bold";
+                    
+                    if (myPlayerData.role === "Regular") {
+                        gameInfoWord.textContent = `Word: ${gameData.secretWord}`;
+                        gameInfoWord.classList.remove("hidden");
+                    } else if (myPlayerData.role === "Infiltrado") {
+                        gameInfoWord.textContent = "Blend in! Guess the word.";
+                        gameInfoWord.classList.remove("hidden");
+                    } else {
+                        gameInfoWord.classList.add("hidden");
+                    }
+                }
+                
+                // Game Status
+                let statusText = "";
+                if (gameData.state === "word_round") {
+                    const turnPlayerName = gameData.players[gameData.turn]?.name || "Someone";
+                    statusText = `Round ${gameData.round}: Waiting for ${turnPlayerName} to speak.`;
+                } else if (gameData.state === "voting") {
+                    statusText = `Time to vote! (Turn ${gameData.gameTurn})`;
+                } else if (gameData.state === "game_over") {
+                    statusText = `Game Over! ${gameData.winner} win!`;
+                }
+                gameStatus.textContent = statusText;
+
+                // Word Input
+                const isMyTurn = gameData.state === "word_round" && gameData.turn === currentUserId;
+                wordInputContainer.classList.toggle("hidden", !isMyTurn || !amIAlive);
+
+                // --- 3D Stack Logic ---
+                if (!is3DInitialized) {
+                    init3DStack();
+                }
+                // Sync the stack with the new word list
+                syncStackWithWords(gameData.words);
+                // --- End 3D Stack Logic ---
+                
+                // Player List
+                gamePlayerList.innerHTML = Object.values(gameData.players).map(p => 
+                    `<li class="p-2 rounded ${p.isAlive ? 'bg-gray-600' : 'bg-gray-800 text-gray-500 line-through'}">
+                        ${p.name}
+                        ${p.isAlive ? '' : ' (Eliminated)'}
+                    </li>`
+                ).join("");
+                
+                // Game Log
+                gameLog.innerHTML = gameData.log.slice().reverse().map(entry => 
+                    `<li class="text-sm text-gray-400">${entry}</li>`
+                ).join("");
+                // Auto-scroll log
+                gameLog.scrollTop = gameLog.scrollHeight;
+            }
+            
+            // --- Modals ---
+            
+            // Voting Modal
+            if (gameData.state === "voting" && amIAlive && myPlayerData.vote === null) {
+                votingPlayerButtons.innerHTML = Object.keys(gameData.players)
+                    .filter(id => gameData.players[id].isAlive) 
+                    .map(id => {
+                        const player = gameData.players[id];
+                        const isMe = id === currentUserId;
+                        return `<button data-vote-id="${id}" class="vote-button w-full p-3 rounded-lg text-white font-semibold
+                            ${isMe ? 'bg-gray-600 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'}">
+                            Vote ${player.name} ${isMe ? '(You)' : ''}
+                        </button>`;
+                    }).join("");
+                votingModal.classList.remove("hidden");
+            } else {
+                votingModal.classList.add("hidden");
+            }
+            
+            // Game Over Modal
+            if (gameData.state === "game_over") {
+                gameOverWinner.textContent = `${gameData.winner} Win!`;
+                gameOverSecretWord.textContent = `The Secret Word was: ${gameData.secretWord}`;
+                
+                const infiltradoNames = Object.values(gameData.players)
+                    .filter(p => p.role === "Infiltrado")
+                    .map(p => p.name)
+                    .join(", ");
+                gameOverInfiltrados.textContent = `Infiltrados: ${infiltradoNames}`;
+                
+                playAgainButton.classList.toggle("hidden", !isHost);
+                gameOverModal.classList.remove("hidden");
+            } else {
+                gameOverModal.classList.add("hidden");
+            }
+        }
+        
+        // --- Helper Functions ---
+        
+        function findNextAlivePlayer(startPlayerId, forceSameRound = false, roundStartPlayerId = null) {
+            const playerIds = Object.keys(localGameData.players);
+            const alivePlayerIds = playerIds.filter(id => localGameData.players[id].isAlive);
+            
+            alivePlayerIds.sort();
+            
+            if (forceSameRound && roundStartPlayerId) {
+                const roundStartIndex = alivePlayerIds.indexOf(roundStartPlayerId);
+                if (roundStartIndex !== -1) {
+                    return alivePlayerIds[roundStartIndex];
+                }
+            }
+
+            const startIndex = alivePlayerIds.indexOf(startPlayerId);
+            
+            if (startIndex === -1) {
+                return alivePlayerIds[0] || null;
+            }
+            
+            const nextIndex = (startIndex + 1) % alivePlayerIds.length;
+            return alivePlayerIds[nextIndex];
+        }
+
+        // --- Event Listeners ---
+        window.addEventListener("load", () => {
+            showSection("login");
+            
+            setUsernameButton.addEventListener("click", handleUsername);
+            usernameInput.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") handleUsername();
+            });
+
+            createGameButton.addEventListener("click", createGame);
+            joinGameButton.addEventListener("click", joinGame);
+            startGameButton.addEventListener("click", startGame);
+
+            submitWordButton.addEventListener("click", submitWord);
+            wordInput.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") submitWord();
+            });
+            
+            votingPlayerButtons.addEventListener("click", (e) => {
+                const button = e.target.closest(".vote-button");
+                if (button && button.dataset.voteId) {
+                    if (button.dataset.voteId === currentUserId) return; 
+                    submitVote(button.dataset.voteId);
+                }
+            });
+            
+            leaveGameButton.addEventListener("click", leaveGame);
+            playAgainButton.addEventListener("click", playAgain);
+
+            $$(".host-setting").forEach(el => {
+                el.addEventListener("change", async (e) => {
+                    if (isHost && currentGameId && localGameData.state === 'lobby') {
+                        const key = e.target.dataset.setting;
+                        const value = parseInt(e.target.value);
+                        try {
+                            const gameRef = getGameDocRef(currentGameId); 
+                            await updateDoc(gameRef, {
+                                [`settings.${key}`]: value
+                            });
+                        } catch (error) {
+                            console.error("Error updating setting:", error);
+                        }
+                    }
+                });
+            });
+        });
+
+    </script>
+</head>
+<body class="h-full font-sans text-gray-200 bg-gray-900">
+
+    <!-- Login Section -->
+    <section id="login-section" class="flex items-center justify-center h-full">
+        <div class="bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-sm">
+            <h1 class="text-3xl font-bold text-white text-center mb-6">Welcome to Infiltrados</h1>
+            <div class="space-y-4">
+                <label for="username-input" class="block text-sm font-medium text-gray-300">Enter your name:</label>
+                <input type="text" id="username-input" class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="e.g., Player1">
+                <button id="set-username-button" class="w-full p-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-bold transition-colors">
+                    Join
+                </button>
+                <p id="login-error" class="text-red-400 text-sm text-center h-4"></p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Lobby Section -->
+    <section id="lobby-section" class="hidden h-full p-4 md:p-8">
+        <div class="max-w-4xl mx-auto">
+            <h1 class="text-3xl font-bold text-white text-center mb-6">Game Lobby</h1>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <!-- Create Game -->
+                <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+                    <h2 class="text-xl font-semibold text-white mb-4">Create New Game</h2>
+                    <div class="space-y-3 mb-4">
+                        <div>
+                            <label for="total-players-select" class="block text-sm font-medium text-gray-300">Total Players</label>
+                            <select id="total-players-select" data-setting="totalPlayers" class="host-setting w-full p-2 bg-gray-700 rounded mt-1 text-white">
+                                <option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option selected>8</option><option>9</option><option>10</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="infiltrados-select" class="block text-sm font-medium text-gray-300">Infiltrados</label>
+                            <select id="infiltrados-select" data-setting="infiltradosCount" class="host-setting w-full p-2 bg-gray-700 rounded mt-1 text-white">
+                                <option>1</option><option selected>2</option><option>3</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="rounds-before-vote-select" class="block text-sm font-medium text-gray-300">Rounds Before Vote</label>
+                            <select id="rounds-before-vote-select" data-setting="roundsBeforeVote" class="host-setting w-full p-2 bg-gray-700 rounded mt-1 text-white">
+                                <option>1</option><option selected>2</option><option>3</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button id="create-game-button" class="w-full p-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-bold transition-colors">
+                        Create Game
+                    </button>
+                </div>
+                
+                <!-- Join Game -->
+                <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+                    <h2 class="text-xl font-semibold text-white mb-4">Join Game</h2>
+                    <label for="game-id-input" class="block text-sm font-medium text-gray-300">Enter Game ID:</label>
+                    <input type="text" id="game-id-input" class="w-full p-3 mt-1 bg-gray-700 border border-gray-600 rounded-lg text-white uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="ABCXYZ">
+                    <button id="join-game-button" class="w-full p-3 mt-4 bg-green-600 hover:bg-green-700 rounded-lg text-white font-bold transition-colors">
+                        Join Game
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Current Lobby -->
+            <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+                <h2 class="text-2xl font-semibold text-white mb-4">Waiting Room</h2>
+                <h3 id="lobby-game-id" class="text-xl text-indigo-400 font-mono mb-4"></h3>
+                <h4 class="text-lg text-white mb-2">Players:</h4>
+                <ul id="lobby-player-list" class="space-y-2 mb-4">
+                </ul>
+                <button id="start-game-button" class="w-full p-3 bg-red-600 hover:bg-red-700 rounded-lg text-white font-bold transition-colors hidden">
+                    Start Game (Host Only)
+                </button>
+            </div>
+            
+        </div>
+    </section>
+
+    <!-- Game Section -->
+    <section id="game-section" class="hidden h-full flex flex-col p-4 md:p-8">
+        <div class="flex-shrink-0 mb-4">
+            <!-- Top Bar -->
+            <div class="flex justify-between items-center bg-gray-800 p-4 rounded-lg shadow-lg">
+                <div>
+                    <h1 class="text-2xl font-bold text-white">Infiltrados</h1>
+                    <div id="game-id-display" class="text-sm font-mono text-indigo-300"></div>
+                </div>
+                <div class="text-right">
+                    <div id="game-info-role" class="text-lg font-bold text-green-400"></div>
+                    <div id="game-info-word" class="text-sm text-gray-300"></div>
+                </div>
+                <button id="leave-game-button" class="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium">Leave Game</button>
+            </div>
+            <!-- Status Bar -->
+            <div id="game-status" class="text-center text-xl font-semibold text-yellow-300 p-4">
+                Loading game...
+            </div>
+        </div>
+
+        <!-- Main Game Area -->
+        <div class="flex-grow grid grid-cols-1 lg:grid-cols-4 gap-6 min-h-0">
+            
+            <!-- Players -->
+            <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
+                <h3 class="text-lg font-semibold text-white mb-3 border-b border-gray-700 pb-2">Players</h3>
+                <ul id="game-player-list" class="space-y-2">
+                    <!-- Player list injected by JS -->
+                </ul>
+            </div>
+            
+            <!-- Word Stack (3D Canvas) -->
+            <div class="bg-gray-800 p-4 rounded-lg shadow-lg lg:col-span-2 flex flex-col">
+                <h3 class="text-lg font-semibold text-white mb-3 border-b border-gray-700 pb-2">Word Stack</h3>
+                
+                <!-- 3D Canvas Container -->
+                <div id="game-canvas-container" class="relative flex-grow w-full h-64 md:h-96 lg:h-auto min-h-[300px] bg-gray-700 rounded-lg overflow-hidden border border-gray-600">
+                    <!-- Canvas will be injected here -->
+                </div>
+
+                <!-- Word Input -->
+                <div id="word-input-container" class="mt-4 flex gap-2 hidden">
+                    <input type="text" id="word-input" class="flex-grow p-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Your word...">
+                    <button id="submit-word-button" class="p-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-bold transition-colors">
+                        Submit
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Log -->
+            <div class="bg-gray-800 p-4 rounded-lg shadow-lg">
+                <h3 class="text-lg font-semibold text-white mb-3 border-b border-gray-700 pb-2">Game Log</h3>
+                <ul id="game-log" class="space-y-1 overflow-y-auto h-64 md:h-auto max-h-96">
+                    <!-- Log entries injected by JS -->
+                </ul>
+            </div>
+            
+        </div>
+    </section>
+    
+    <!-- Voting Modal -->
+    <div id="voting-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-md">
+            <h2 class="text-3xl font-bold text-white text-center mb-6">Vote to Eliminate!</h2>
+            <div id="voting-player-buttons" class="space-y-3">
+            </div>
+        </div>
+    </div>
+    
+    <!-- Game Over Modal -->
+    <div id="game-over-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-md text-center">
+            <h2 id="game-over-winner" class="text-4xl font-bold text-yellow-300 mb-4"></h2>
+            <p id="game-over-secret-word" class="text-xl text-white mb-2"></p>
+            <p id="game-over-infiltrados" class="text-lg text-red-400 mb-8"></p>
+            
+            <button id="play-again-button" class="w-full p-3 mb-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-bold transition-colors hidden">
+                Play Again (Host)
+            </button>
+            <p class="text-sm text-gray-400">Wait for the host to start a new game.</p>
+        </div>
+    </div>
+
+</body>
+</html>
