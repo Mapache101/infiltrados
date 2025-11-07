@@ -46,6 +46,20 @@
         let localGameData = {}; // Local cache of game state
         let isHost = false;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'infiltrados-game';
+        
+        // --- Player Colors ---
+        const PLAYER_COLORS = [
+            '#FF6B6B', // Red
+            '#4ECDC4', // Teal
+            '#45B7D1', // Blue
+            '#FED766', // Yellow
+            '#F0B86E', // Orange
+            '#2AB7CA', // Cyan
+            '#F6E65F', // Light Yellow
+            '#54C6EB', // Sky Blue
+            '#88D8B0', // Mint
+            '#FFD166'  // Gold
+        ];
 
         // --- 3D Stack State ---
         let threeStage = null;
@@ -85,7 +99,6 @@
         const gameInfoRole = $("#game-info-role");
         const gameInfoWord = $("#game-info-word");
         const gameStatus = $("#game-status");
-        // const gameWordList = $("#game-word-list"); // <-- This is now the 3D canvas
         const gamePlayerList = $("#game-player-list");
         const gameLog = $("#game-log");
         const wordInputContainer = $("#word-input-container");
@@ -102,6 +115,8 @@
         const gameOverInfiltrados = $("#game-over-infiltrados");
         const leaveGameButton = $("#leave-game-button");
         const playAgainButton = $("#play-again-button");
+        const toggleIdentityButton = $("#toggle-identity-button"); // Added
+        const identityInfo = $("#identity-info"); // Added
 
         // --- Secret Word List ---
         const SECRET_WORDS = [
@@ -110,35 +125,44 @@
             "Park", "Zoo", "Aquarium", "Cinema", "Theater", "Gym", "Stadium",
             "Farm", "Factory", "Police Station", "Fire Station", "Post Office"
         ];
-
-        // --- 3D STACK CLASSES (from stack.html, modified) ---
-
+        
+        // --- Color Helper ---
         /**
-         * Represents the 3D rendering stage (scene, camera, renderer).
-         * Modified to attach to a specific container ID and resize based on it.
+         * Gets a contrasting text color (black or white) for a given hex background color.
+         * @param {string} hex - The background color in hex format (e.g., "FF6B6B" or "#FF6B6B").
+         * @returns {string} - "#333333" (dark) or "#FFFFFF" (light).
          */
+        function getContrastingTextColor(hex) {
+            hex = hex.replace('#', '');
+            const r = parseInt(hex.substring(0, 2), 16);
+            const g = parseInt(hex.substring(2, 4), 16);
+            const b = parseInt(hex.substring(4, 6), 16);
+            // YIQ formula for perceived brightness
+            const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+            return (yiq >= 128) ? '#333333' : '#FFFFFF';
+        }
+
+
+        // --- 3D STACK CLASSES (Modified) ---
+
         class Stage {
             constructor(containerId) {
-                // container
                 this.container = document.getElementById(containerId);
                 if (!this.container) {
                     console.error("3D Stage container not found:", containerId);
                     return;
                 }
 
-                // renderer
                 this.renderer = new THREE.WebGLRenderer({
                     antialias: true,
-                    alpha: true // Use alpha for transparent background
+                    alpha: true 
                 });
                 this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
-                this.renderer.setClearColor(0x000000, 0); // Transparent background
+                this.renderer.setClearColor(0x000000, 0); 
                 this.container.appendChild(this.renderer.domElement);
 
-                // scene
                 this.scene = new THREE.Scene();
 
-                // camera
                 let aspect = this.container.clientWidth / this.container.clientHeight;
                 let d = 20;
                 this.camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, -100, 1000);
@@ -147,7 +171,6 @@
                 this.camera.position.z = 2;
                 this.camera.lookAt(new THREE.Vector3(0, 0, 0));
 
-                //light
                 this.light = new THREE.DirectionalLight(0xffffff, 0.5);
                 this.light.position.set(0, 499, 0);
                 this.scene.add(this.light);
@@ -174,7 +197,7 @@
 
                 this.renderer.setSize(width, height);
                 
-                let viewSize = 30; // From original game
+                let viewSize = 30; 
                 this.camera.left = width / -viewSize;
                 this.camera.right = width / viewSize;
                 this.camera.top = height / viewSize;
@@ -197,12 +220,13 @@
             }
         }
 
-        /**
-         * Represents a single 3D block in the stack.
-         * Modified to be a static (non-moving) block with a dynamic text texture.
-         */
         class Block {
-            constructor(block) {
+            /**
+             * Creates a new 3D block.
+             * @param {Block | null} block - The block beneath this one.
+             * @param {string | number} playerColor - The hex color for this player (e.g., 0xFF6B6B or "#FF6B6B").
+             */
+            constructor(block, playerColor = 0x333344) {
                 // Define instance properties
                 this.STATES = { ACTIVE: 'active', STOPPED: 'stopped', MISSED: 'missed' };
                 this.dimension = { width: 0, height: 0, depth: 0 };
@@ -210,35 +234,23 @@
                 this.mesh;
                 this.state;
                 this.index;
-                this.colorOffset;
-                this.color;
+                this.color; // This will be a THREE.Color object
                 this.material;
                 this.targetBlock;
                 
                 this.targetBlock = block;
                 this.index = (this.targetBlock ? this.targetBlock.index : 0) + 1;
 
-                // All blocks will be the same size and centered
                 this.dimension.width = 10;
                 this.dimension.height = 2;
                 this.dimension.depth = 10;
 
-                this.position.x = 0; // Centered
+                this.position.x = 0; 
                 this.position.y = this.dimension.height * this.index;
-                this.position.z = 0; // Centered
-
-                this.colorOffset = this.targetBlock ? this.targetBlock.colorOffset : Math.round(Math.random() * 100);
-
-                // set color
-                if (!this.targetBlock) {
-                    this.color = 0x333344; // Base block
-                } else {
-                    let offset = this.index + this.colorOffset;
-                    var r = Math.sin(0.3 * offset) * 55 + 200;
-                    var g = Math.sin(0.3 * offset + 2) * 55 + 200;
-                    var b = Math.sin(0.3 * offset + 4) * 55 + 200;
-                    this.color = new THREE.Color(r / 255, g / 255, b / 255);
-                }
+                this.position.z = 0; 
+                
+                // Set color from constructor argument
+                this.color = new THREE.Color(playerColor);
 
                 // state is always STOPPED
                 this.state = this.STATES.STOPPED;
@@ -246,40 +258,47 @@
                 // create block
                 let geometry = new THREE.BoxGeometry(this.dimension.width, this.dimension.height, this.dimension.depth);
                 
-                // Create a blank texture for now
-                const canvas = this.createWordTexture('Loading...');
+                // Create a blank texture for the TOP (index 2)
+                const canvas = this.createTopTexture('Loading...', this.color.getHexString());
                 const texture = new THREE.CanvasTexture(canvas);
                 texture.minFilter = THREE.LinearFilter;
                 texture.wrapS = THREE.ClampToEdgeWrapping;
                 texture.wrapT = THREE.ClampToEdgeWrapping;
                 
+                // Materials array:
+                // 0: right, 1: left, 2: top, 3: bottom, 4: front, 5: back
                 const materials = [
                     new THREE.MeshToonMaterial({ color: this.color, shading: THREE.FlatShading }), // right
                     new THREE.MeshToonMaterial({ color: this.color, shading: THREE.FlatShading }), // left
-                    new THREE.MeshToonMaterial({ color: this.color, shading: THREE.FlatShading }), // top
+                    new THREE.MeshToonMaterial({ map: texture, color: 0xffffff, shading: THREE.FlatShading }), // top (with text)
                     new THREE.MeshToonMaterial({ color: this.color, shading: THREE.FlatShading }), // bottom
-                    new THREE.MeshToonMaterial({ map: texture, color: 0xffffff, shading: THREE.FlatShading }), // front
+                    new THREE.MeshToonMaterial({ color: this.color, shading: THREE.FlatShading }), // front (now just color)
                     new THREE.MeshToonMaterial({ color: this.color, shading: THREE.FlatShading })  // back
                 ];
                 
-                this.material = materials; // This is now an array
+                this.material = materials;
                 this.mesh = new THREE.Mesh(geometry, this.material);
                 this.mesh.position.set(this.position.x, this.position.y, this.position.z);
             }
             
-            // Helper function to create text texture
-            createWordTexture(wordText) {
+            /**
+             * Creates a canvas texture for the top of the block.
+             * @param {string} wordText - The word to write.
+             * @param {string} hexColorString - The player's color as a hex string (e.g., "FF6B6B").
+             */
+            createTopTexture(wordText, hexColorString) {
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
-                // Canvas dimensions for the texture
+                // Canvas dimensions for the texture (square, for 10x10 top)
                 canvas.width = 512;
-                canvas.height = 102; // Proportional to block height (2)
+                canvas.height = 512; 
                 
-                ctx.fillStyle = '#FFFFFF'; // Background color of the text face
+                // Background is the player's color
+                ctx.fillStyle = '#' + hexColorString; 
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 
-                ctx.font = 'bold 36px Comfortaa, cursive'; // Use Comfortaa font
-                ctx.fillStyle = '#333344'; // Text color
+                ctx.font = 'bold 50px Comfortaa, cursive'; // Use Comfortaa font
+                ctx.fillStyle = getContrastingTextColor(hexColorString); // Dynamic text color
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 
@@ -298,26 +317,26 @@
                 return canvas;
             }
 
-            // Public method to update the block's text
+            /**
+             * Updates the text on the top of the block.
+             * @param {object} wordData - The word object from Firestore ({ word, name, ... }).
+             */
             updateWord(wordData) {
-                const text = `${wordData.name}: ${wordData.word}`;
-                const canvas = this.createWordTexture(text);
+                const text = wordData.word; // Just the word
+                const canvas = this.createTopTexture(text, this.color.getHexString());
                 const texture = new THREE.CanvasTexture(canvas);
                 texture.minFilter = THREE.LinearFilter;
                 texture.wrapS = THREE.ClampToEdgeWrapping;
                 texture.wrapT = THREE.ClampToEdgeWrapping;
                 
-                // Update the material (index 4 is 'front')
-                this.mesh.material[4].map = texture;
-                this.mesh.material[4].needsUpdate = true;
+                // Update the material (index 2 is 'top')
+                this.mesh.material[2].map = texture;
+                this.mesh.material[2].needsUpdate = true;
             }
         }
         
         // --- 3D STACK HELPER FUNCTIONS ---
 
-        /**
-         * Initializes the 3D stage, creates the base block, and starts the render loop.
-         */
         function init3DStack() {
             if (is3DInitialized) return;
             
@@ -328,13 +347,12 @@
                 threeStage = new Stage("game-canvas-container");
                 
                 // Add the base block
-                const baseBlock = new Block(null);
-                baseBlock.updateWord( { name: 'Infiltrados', word: 'Game Start' } );
+                const baseBlock = new Block(null, 0x333344); // Base block is default dark color
+                baseBlock.updateWord( { word: 'Game Start', name: 'Infiltrados' } ); // Use 'word' property
                 stackedBlocks.push(baseBlock);
                 threeStage.add(baseBlock.mesh);
                 threeStage.setCamera(baseBlock.position.y + 6);
                 
-                // Handle resizing
                 if (gameResizeObserver) gameResizeObserver.disconnect();
                 gameResizeObserver = new ResizeObserver(entries => {
                     if (threeStage) {
@@ -343,10 +361,10 @@
                 });
                 gameResizeObserver.observe(container);
                 
-                threeStage.onResize(); // Initial resize
+                threeStage.onResize();
                 
                 is3DInitialized = true;
-                animate3DStack(); // Start render loop
+                animate3DStack(); 
                 console.log("3D Stack Initialized");
             } catch (error) {
                 console.error("Error initializing 3D stack:", error);
@@ -354,9 +372,6 @@
             }
         }
 
-        /**
-         * The main render loop for the 3D scene.
-         */
         function animate3DStack() {
             if (!is3DInitialized) return;
             animationFrameId = requestAnimationFrame(animate3DStack);
@@ -365,9 +380,6 @@
             }
         }
 
-        /**
-         * Stops the render loop, cleans up the scene, and removes the canvas.
-         */
         function stop3DStack() {
             if (animationFrameId) {
                 cancelAnimationFrame(animationFrameId);
@@ -379,7 +391,7 @@
             }
             const container = $("#game-canvas-container");
             if (container) {
-                container.innerHTML = ""; // Clear canvas
+                container.innerHTML = ""; 
             }
             threeStage = null;
             stackedBlocks = [];
@@ -387,47 +399,40 @@
             console.log("3D Stack Stopped");
         }
 
-        /**
-         * Compares the Firestore word list with the on-screen blocks and adds any missing blocks.
-         */
         function syncStackWithWords(words) {
             if (!is3DInitialized) return;
 
             const wordsInFirebase = words.length;
-            // How many blocks *on top of the base* do we have?
             const blocksOnStack = stackedBlocks.length - 1;
 
             if (wordsInFirebase === blocksOnStack) {
-                // In sync, do nothing
                 return;
             }
 
-            // On "Play Again", wordsInFirebase will be 0, blocksOnStack > 0
             if (wordsInFirebase < blocksOnStack) {
                 console.log("Word count mismatch (resetting), rebuilding stack.");
                 stop3DStack();
                 init3DStack();
-                // After init, blocksOnStack will be 0, and we fall through to add blocks
             }
             
-            // Re-check after potential reset
             const currentBlocksOnStack = stackedBlocks.length - 1;
-            
-            // Add missing blocks
             let lastBlock = stackedBlocks[stackedBlocks.length - 1];
             
             for (let i = currentBlocksOnStack; i < wordsInFirebase; i++) {
                 const newWordData = words[i];
-                const newBlock = new Block(lastBlock); // Create new block
+                // Get the player's color from the local game data
+                const playerData = localGameData.players[newWordData.player];
+                const playerColor = playerData ? playerData.color : '#CCCCCC'; // Default color if player not found
+                
+                const newBlock = new Block(lastBlock, playerColor); // Pass color to constructor
                 newBlock.updateWord(newWordData); // Set its text
                 
                 stackedBlocks.push(newBlock);
                 threeStage.add(newBlock.mesh);
                 
-                lastBlock = newBlock; // Update for next loop
+                lastBlock = newBlock; 
             }
             
-            // Update camera
             if (lastBlock) {
                 threeStage.setCamera(lastBlock.position.y + 6);
             }
@@ -435,14 +440,12 @@
 
         // --- Helper function for correct Firestore path ---
         function getGameDocRef(gameId) {
-            // /artifacts/{appId}/public/data/games/{gameId}
             return doc(db, "artifacts", appId, "public", "data", "games", gameId);
         }
 
         // --- Firebase Initialization ---
         async function initFirebase() {
             try {
-                // Config from your index.html
                 const firebaseConfig = {
                     apiKey: "AIzaSyAG6v0TT9miam83wXOB4aqdqD6qbc5GhPo",
                     authDomain: "infiltrados-game.firebaseapp.com",
@@ -460,9 +463,8 @@
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
-                setLogLevel('debug'); // Enable verbose logging
+                setLogLevel('debug'); 
 
-                // --- Auth Handling ---
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         currentUserId = user.uid;
@@ -470,7 +472,6 @@
                         loginSection.classList.add("hidden");
                         lobbySection.classList.remove("hidden");
                     } else {
-                        // No user, try to sign in
                         try {
                             if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                                 await signInWithCustomToken(auth, __initial_auth_token);
@@ -547,7 +548,8 @@
                         name: currentUsername,
                         isAlive: true,
                         role: null,
-                        vote: null
+                        vote: null,
+                        color: null // Player color, assigned at game start
                     }
                 },
                 secretWord: "",
@@ -601,7 +603,8 @@
                     name: currentUsername,
                     isAlive: true,
                     role: null,
-                    vote: null
+                    vote: null,
+                    color: null // Player color, assigned at game start
                 };
                 
                 try {
@@ -638,7 +641,6 @@
                 localGameData = gameData; // Cache game data
                 updateUI(gameData);
 
-                // --- Host-Only Logic ---
                 if (isHost) {
                     if (gameData.state === "voting" && didAllAlivePlayersVote(gameData)) {
                         tallyVotes(gameData);
@@ -660,7 +662,7 @@
                 gameUnsubscribe = null;
             }
             
-            stop3DStack(); // <-- Clean up 3D scene
+            stop3DStack(); // Clean up 3D scene
             
             currentGameId = null;
             isHost = false;
@@ -669,6 +671,13 @@
             lobbyGameIdDisplay.textContent = "";
             lobbyPlayerList.innerHTML = "";
             gameIdInput.value = "";
+
+            // Reset identity toggle
+            if (identityInfo && toggleIdentityButton) {
+                identityInfo.classList.add("hidden");
+                toggleIdentityButton.textContent = "Show Identity";
+                isIdentityVisible = false;
+            }
         }
 
         async function startGame() {
@@ -681,14 +690,14 @@
                 return showError(`Waiting for ${gameData.settings.totalPlayers} players. Currently have ${playerIds.length}.`);
             }
             
-            const { infiltradosCount } = gameData.settings;
-            const newPlayers = { ...gameData.players };
-            const shuffledPlayerIds = playerIds.sort(() => 0.5 - Math.random());
-            
-            const infiltradoIds = [];
-            
+            // --- Assign Roles AND Colors ---
             for (let i = 0; i < shuffledPlayerIds.length; i++) {
                 const id = shuffledPlayerIds[i];
+                
+                // Assign color from our list
+                newPlayers[id].color = PLAYER_COLORS[i % PLAYER_COLORS.length];
+                
+                // Assign role
                 if (i < infiltradosCount) {
                     newPlayers[id].role = "Infiltrado";
                     infiltradoIds.push(newPlayers[id].name); 
@@ -697,15 +706,20 @@
                 }
             }
 
-            const secretWord = SECRET_WORDS[Math.floor(Math.random() * SECRET_WORDS.length)];
+            // --- Pick Word & Start Player ---
+            const customWord = $("#custom-word-input").value.trim();
+            const secretWord = (customWord.length > 1 && !customWord.includes(" "))
+                ? customWord // Use custom word
+                : SECRET_WORDS[Math.floor(Math.random() * SECRET_WORDS.length)]; // Use random
+            
             const startPlayerId = shuffledPlayerIds[Math.floor(Math.random() * shuffledPlayerIds.length)];
 
             try {
                 const gameRef = getGameDocRef(currentGameId); 
                 await updateDoc(gameRef, {
                     state: "word_round",
-                    players: newPlayers,
-                    secretWord: secretWord,
+                    players: newPlayers, // This now includes the .color property
+                    secretWord: secretWord, // Now custom or random
                     turn: startPlayerId,
                     round: 1,
                     gameTurn: 1,
@@ -914,25 +928,50 @@
         
         async function playAgain() {
             if (!isHost) return;
+
+            const gameData = localGameData; // Use the cached game data
+            const playerIds = Object.keys(gameData.players);
             
-            const newPlayers = { ...localGameData.players };
-            Object.keys(newPlayers).forEach(id => {
+            const { infiltradosCount } = gameData.settings;
+            const newPlayers = { ...gameData.players };
+            const shuffledPlayerIds = playerIds.sort(() => 0.5 - Math.random());
+            
+            const infiltradoIds = [];
+            
+            // --- Assign Roles AND Colors ---
+            for (let i = 0; i < shuffledPlayerIds.length; i++) {
+                const id = shuffledPlayerIds[i];
+                
+                // Reset player state
                 newPlayers[id].isAlive = true;
-                newPlayers[id].role = null;
                 newPlayers[id].vote = null;
-            });
-            
+
+                // Assign color from our list
+                newPlayers[id].color = PLAYER_COLORS[i % PLAYER_COLORS.length];
+                
+                // Assign role
+                if (i < infiltradosCount) {
+                    newPlayers[id].role = "Infiltrado";
+                    infiltradoIds.push(newPlayers[id].name); 
+                } else {
+                    newPlayers[id].role = "Regular";
+                }
+            }
+
+            const secretWord = SECRET_WORDS[Math.floor(Math.random() * SECRET_WORDS.length)];
+            const startPlayerId = shuffledPlayerIds[Math.floor(Math.random() * shuffledPlayerIds.length)];
+
             try {
                  const gameRef = getGameDocRef(currentGameId); 
                  await updateDoc(gameRef, {
-                    state: "lobby",
-                    players: newPlayers,
-                    secretWord: "",
-                    turn: null,
+                    state: "word_round", // Go straight to word round
+                    players: newPlayers, // New roles and colors
+                    secretWord: secretWord, // New word
+                    turn: startPlayerId, // New start player
                     round: 1,
                     gameTurn: 1,
-                    words: [],
-                    log: ["Host started a new game!"],
+                    words: [], // Clear words
+                    log: ["Host started a new game!", "Roles have been reassigned."], // New log
                     winner: null
                  });
             } catch(error) {
@@ -957,6 +996,7 @@
                 
                 startGameButton.classList.toggle("hidden", !isHost);
                 $$(".host-setting").forEach(el => el.disabled = !isHost);
+                $$(".host-only-input").forEach(el => el.disabled = !isHost); // Added for custom word
                 if (isHost) {
                     totalPlayersSelect.value = gameData.settings.totalPlayers;
                     infiltradosSelect.value = gameData.settings.infiltradosCount;
@@ -1006,29 +1046,29 @@
                 if (!is3DInitialized) {
                     init3DStack();
                 }
-                // Sync the stack with the new word list
                 syncStackWithWords(gameData.words);
-                // --- End 3D Stack Logic ---
                 
-                // Player List
-                gamePlayerList.innerHTML = Object.values(gameData.players).map(p => 
-                    `<li class="p-2 rounded ${p.isAlive ? 'bg-gray-600' : 'bg-gray-800 text-gray-500 line-through'}">
-                        ${p.name}
-                        ${p.isAlive ? '' : ' (Eliminated)'}
+                // --- Player List (Now with colors) ---
+                gamePlayerList.innerHTML = Object.values(gameData.players).map(p => {
+                    // Show color swatch if color is assigned
+                    const colorStyle = p.color ? `background-color: ${p.color}` : 'background-color: #555';
+                    return `
+                    <li class="flex items-center p-2 rounded ${p.isAlive ? 'bg-gray-600' : 'bg-gray-800 text-gray-500 line-through'}">
+                        <span class="w-4 h-4 rounded-full mr-3 border-2 border-gray-400 flex-shrink-0" style="${colorStyle}"></span>
+                        <span>${p.name}</span>
+                        ${p.isAlive ? '' : '<span class="ml-2 text-xs"> (Eliminated)</span>'}
                     </li>`
-                ).join("");
+                }).join("");
                 
                 // Game Log
                 gameLog.innerHTML = gameData.log.slice().reverse().map(entry => 
                     `<li class="text-sm text-gray-400">${entry}</li>`
                 ).join("");
-                // Auto-scroll log
                 gameLog.scrollTop = gameLog.scrollHeight;
             }
             
             // --- Modals ---
             
-            // Voting Modal
             if (gameData.state === "voting" && amIAlive && myPlayerData.vote === null) {
                 votingPlayerButtons.innerHTML = Object.keys(gameData.players)
                     .filter(id => gameData.players[id].isAlive) 
@@ -1045,7 +1085,6 @@
                 votingModal.classList.add("hidden");
             }
             
-            // Game Over Modal
             if (gameData.state === "game_over") {
                 gameOverWinner.textContent = `${gameData.winner} Win!`;
                 gameOverSecretWord.textContent = `The Secret Word was: ${gameData.secretWord}`;
@@ -1089,6 +1128,7 @@
         }
 
         // --- Event Listeners ---
+        let isIdentityVisible = false; // Added for identity toggle
         window.addEventListener("load", () => {
             showSection("login");
             
@@ -1106,6 +1146,18 @@
                 if (e.key === "Enter") submitWord();
             });
             
+            // --- Identity Toggle Listener ---
+            toggleIdentityButton.addEventListener("click", () => {
+                isIdentityVisible = !isIdentityVisible;
+                if (isIdentityVisible) {
+                    identityInfo.classList.remove("hidden");
+                    toggleIdentityButton.textContent = "Hide Identity";
+                } else {
+                    identityInfo.classList.add("hidden");
+                    toggleIdentityButton.textContent = "Show Identity";
+                }
+            });
+
             votingPlayerButtons.addEventListener("click", (e) => {
                 const button = e.target.closest(".vote-button");
                 if (button && button.dataset.voteId) {
@@ -1182,8 +1234,13 @@
                                 <option>1</option><option selected>2</option><option>3</option>
                             </select>
                         </div>
+                        <!-- Custom Word Input -->
+                        <div>
+                            <label for="custom-word-input" class="block text-sm font-medium text-gray-300">Custom Secret Word (Optional)</label>
+                            <input type="text" id="custom-word-input" class="host-only-input w-full p-2 bg-gray-700 rounded mt-1 text-white" placeholder="Leave blank for random" disabled>
+                        </div>
                     </div>
-                    <button id="create-game-button" class="w-full p-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-bold transition-colors">
+                    <button id="create-game-button" class="w-full p-3 mt-4 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-bold transition-colors">
                         Create Game
                     </button>
                 </div>
@@ -1223,9 +1280,13 @@
                     <h1 class="text-2xl font-bold text-white">Infiltrados</h1>
                     <div id="game-id-display" class="text-sm font-mono text-indigo-300"></div>
                 </div>
+                <!-- Modified Identity Section -->
                 <div class="text-right">
-                    <div id="game-info-role" class="text-lg font-bold text-green-400"></div>
-                    <div id="game-info-word" class="text-sm text-gray-300"></div>
+                    <button id="toggle-identity-button" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 rounded text-sm mb-1">Show Identity</button>
+                    <div id="identity-info" class="hidden"> <!-- Hidden by default -->
+                        <div id="game-info-role" class="text-lg font-bold text-green-400"></div>
+                        <div id="game-info-word" class="text-sm text-gray-300"></div>
+                    </div>
                 </div>
                 <button id="leave-game-button" class="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium">Leave Game</button>
             </div>
