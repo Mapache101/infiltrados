@@ -169,8 +169,8 @@
         let scene, camera, renderer, tableMesh, playerFiguresGroup, skyMesh;
         // Simple color array for player figures
         const PLAYER_COLORS = [
-            0x_f94144, 0x_f3722c, 0x_f8961e, 0x_f9c74f, 0x_90be6d, 
-            0x_6a00f4, 0x_c71fcd
+            0xf94144, 0xf3722c, 0xf8961e, 0xf9c74f, 0x90be6d, 
+            0x43aa8b, 0x577590, 0x277da1, 0x6a00f4, 0xc71fcd
         ];
         const ELIMINATED_COLOR = 0x666666;
         const TURN_COLOR = 0xffffff; // Bright white for the current turn
@@ -288,7 +288,7 @@
             // 5. Create "Table"
             const tableGeometry = new THREE.PlaneGeometry(20, 15);
             const tableMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0x_334155, // slate-700
+                color: 0x334155, // slate-700
                 shininess: 20
             });
             tableMesh = new THREE.Mesh(tableGeometry, tableMaterial);
@@ -298,7 +298,7 @@
 
             // 6. Create Stylized Environment (Low-Poly Mountains)
             const mountainMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0x_475569, // slate-600
+                color: 0x475569, // slate-600
                 flatShading: true 
             });
             const mountainGroup = new THREE.Group();
@@ -319,7 +319,7 @@
 
             // 7. Create Sky
             const skyGeometry = new THREE.PlaneGeometry(100, 100);
-            const skyMaterial = new THREE.MeshBasicMaterial({ color: 0x_1e293b }); // slate-800
+            const skyMaterial = new THREE.MeshBasicMaterial({ color: 0x1e293b }); // slate-800
             skyMesh = new THREE.Mesh(skyGeometry, skyMaterial);
             skyMesh.position.z = -25;
             skyMesh.position.y = 10;
