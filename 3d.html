@@ -143,60 +143,17 @@
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'infiltrados-game';
 
         // --- DOM Elements ---
-        const $ = (selector) => document.querySelector(selector);
-        const $$ = (selector) => document.querySelectorAll(selector);
-
-        // Page Sections
-        const loginSection = $("#login-section");
-        const lobbySection = $("#lobby-section");
-        const gameSection = $("#game-section");
-        
-        // Login
-        const usernameInput = $("#username-input");
-        const setUsernameButton = $("#set-username-button");
-        const loginError = $("#login-error");
-
-        // Lobby
-        const createGameButton = $("#create-game-button");
-        const joinGameButton = $("#join-game-button");
-        const gameIdInput = $("#game-id-input");
-        const lobbyGameIdDisplay = $("#lobby-game-id");
-        const lobbyPlayerList = $("#lobby-player-list");
-        const startGameButton = $("#start-game-button");
-
-        // Game Settings (Lobby)
-        const totalPlayersSelect = $("#total-players-select");
-        const infiltradosSelect = $("#infiltrados-select");
-        const roundsBeforeVoteSelect = $("#rounds-before-vote-select");
-        const customWordContainer = $("#custom-word-container");
-        const customWordInput = $("#custom-word-input");
-        const customThemeInput = $("#custom-theme-input"); 
-        const setCustomWordButton = $("#set-custom-word-button");
-        const clearCustomWordButton = $("#clear-custom-word-button");
-        
-        // Game
-        const gameInfoRole = $("#game-info-role");
-        const gameInfoWord = $("#game-info-word");
-        const revealRoleButton = $("#reveal-role-button");
-        const gameStatus = $("#game-status");
-        const gameWordList = $("#game-word-list");
-        const gamePlayerList = $("#game-player-list");
-        const gameLog = $("#game-log");
-        const wordInputContainer = $("#word-input-container");
-        const wordInput = $("#word-input");
-        const submitWordButton = $("#submit-word-button");
-        const gameIdDisplay = $("#game-id-display");
-        const gameThemeDisplay = $("#game-theme-display"); 
-
-        // Modals
-        const votingModal = $("#voting-modal");
-        const votingPlayerButtons = $("#voting-player-buttons");
-        const gameOverModal = $("#game-over-modal");
-        const gameOverWinner = $("#game-over-winner");
-        const gameOverSecretWord = $("#game-over-secret-word");
-        const gameOverInfiltrados = $("#game-over-infiltrados");
-        const leaveGameButton = $("#leave-game-button");
-        const playAgainButton = $("#play-again-button");
+        // NEW: Declare variables here, but assign them inside 'load' listener
+        let $, $$;
+        let loginSection, lobbySection, gameSection;
+        let usernameInput, setUsernameButton, loginError;
+        let createGameButton, joinGameButton, gameIdInput, lobbyGameIdDisplay, lobbyPlayerList, startGameButton;
+        let totalPlayersSelect, infiltradosSelect, roundsBeforeVoteSelect;
+        let customWordContainer, customWordInput, customThemeInput, setCustomWordButton, clearCustomWordButton;
+        let gameInfoRole, gameInfoWord, revealRoleButton, gameStatus, gameWordList, gamePlayerList, gameLog;
+        let wordInputContainer, wordInput, submitWordButton, gameIdDisplay, gameThemeDisplay;
+        let votingModal, votingPlayerButtons, gameOverModal, gameOverWinner, gameOverSecretWord, gameOverInfiltrados;
+        let leaveGameButton, playAgainButton;
 
         // --- Secret Word List ---
         const SECRET_WORDS = [
@@ -213,7 +170,7 @@
         // Simple color array for player figures
         const PLAYER_COLORS = [
             0x_f94144, 0x_f3722c, 0x_f8961e, 0x_f9c74f, 0x_90be6d, 
-            0x_43aa8b, 0x_577590, 0x_277da1, 0x_6a00f4, 0x_c71fcd
+            0x_6a00f4, 0x_c71fcd
         ];
         const ELIMINATED_COLOR = 0x666666;
         const TURN_COLOR = 0xffffff; // Bright white for the current turn
@@ -1125,6 +1082,64 @@
 
         // --- Event Listeners ---
         window.addEventListener("load", () => {
+            // NEW: Assign all DOM elements now that the page is loaded
+            $ = (selector) => document.querySelector(selector);
+            $$ = (selector) => document.querySelectorAll(selector);
+
+            // Page Sections
+            loginSection = $("#login-section");
+            lobbySection = $("#lobby-section");
+            gameSection = $("#game-section");
+            
+            // Login
+            usernameInput = $("#username-input");
+            setUsernameButton = $("#set-username-button");
+            loginError = $("#login-error");
+
+            // Lobby
+            createGameButton = $("#create-game-button");
+            joinGameButton = $("#join-game-button");
+            gameIdInput = $("#game-id-input");
+            lobbyGameIdDisplay = $("#lobby-game-id");
+            lobbyPlayerList = $("#lobby-player-list");
+            startGameButton = $("#start-game-button");
+
+            // Game Settings (Lobby)
+            totalPlayersSelect = $("#total-players-select");
+            infiltradosSelect = $("#infiltrados-select");
+            roundsBeforeVoteSelect = $("#rounds-before-vote-select");
+            customWordContainer = $("#custom-word-container");
+            customWordInput = $("#custom-word-input");
+            customThemeInput = $("#custom-theme-input"); 
+            setCustomWordButton = $("#set-custom-word-button");
+            clearCustomWordButton = $("#clear-custom-word-button");
+            
+            // Game
+            gameInfoRole = $("#game-info-role");
+            gameInfoWord = $("#game-info-word");
+            revealRoleButton = $("#reveal-role-button");
+            gameStatus = $("#game-status");
+            gameWordList = $("#game-word-list");
+            gamePlayerList = $("#game-player-list");
+            gameLog = $("#game-log");
+            wordInputContainer = $("#word-input-container");
+            wordInput = $("#word-input");
+            submitWordButton = $("#submit-word-button");
+            gameIdDisplay = $("#game-id-display");
+            gameThemeDisplay = $("#game-theme-display"); 
+
+            // Modals
+            votingModal = $("#voting-modal");
+            votingPlayerButtons = $("#voting-player-buttons");
+            gameOverModal = $("#game-over-modal");
+            gameOverWinner = $("#game-over-winner");
+            gameOverSecretWord = $("#game-over-secret-word");
+            gameOverInfiltrados = $("#game-over-infiltrados");
+            leaveGameButton = $("#leave-game-button");
+            playAgainButton = $("#play-again-button");
+
+            // --- End of NEW DOM Assignments ---
+
             // NEW: Init Three.js first
             initThree();
 
