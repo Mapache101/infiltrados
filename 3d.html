@@ -154,6 +154,9 @@
         let wordInputContainer, wordInput, submitWordButton, gameIdDisplay, gameThemeDisplay;
         let votingModal, votingPlayerButtons, gameOverModal, gameOverWinner, gameOverSecretWord, gameOverInfiltrados;
         let leaveGameButton, playAgainButton;
+        // NEW: Reaction Modal Elements
+        let reactModal, reactEmojiList, closeReactModal;
+        let reactingToWordIndex = null; // State to track which word is being reacted to
 
         // --- Secret Word List ---
         const SECRET_WORDS = [
@@ -163,7 +166,11 @@
             "Farm", "Factory", "Police Station", "Fire Station", "Post Office"
         ];
         
-        const PLAYER_SYMBOLS = ["👑", "🚀", "⭐", "🤖", "🦊", "🦄", "🍕", "⚽", "🎨", "🎸", "💡", "📚", "🧭", "🧪", "🔑", "🛡️"];
+        // NEW: Emojis for reactions (using OpenMoji Hex Codes)
+        const REACTION_EMOJIS = ["1F602", "1F60D", "1F914", "1F4A9", "1F525", "2753"]; // 😂, 😍, 🤔, 💩, 🔥, ❓
+
+        // NEW: Updated to use OpenMoji Hex Codes
+        const PLAYER_SYMBOLS = ["1F451", "1F680", "2B50", "1F916", "1F98A", "1F984", "1F355", "26BD", "1F3A8", "1F3B8", "1F4A1", "1F4DA", "1F9ED", "1F9EA", "1F511", "1F6E1"];
 
         // --- NEW: Three.js State ---
         let scene, camera, renderer, tableMesh, playerFiguresGroup, skyMesh;
@@ -178,6 +185,12 @@
         // --- Helper function for correct Firestore path ---
         function getGameDocRef(gameId) {
             return doc(db, "artifacts", appId, "public", "data", "games", gameId);
+        }
+
+        // NEW: Helper function for OpenMoji URLs
+        function getEmojiUrl(hexCode) {
+            // Using 72x72 PNGs from OpenMoji CDN
+            return `https://openmoji.org/data/color/72x72/${hexCode}.png`;
         }
 
         // --- Firebase Initialization ---
@@ -539,7 +552,8 @@
 
                 const existingSymbols = Object.values(gameData.players).map(p => p.symbol);
                 const availableSymbols = PLAYER_SYMBOLS.filter(s => !existingSymbols.includes(s));
-                const newSymbol = availableSymbols.length > 0 ? availableSymbols[0] : "❔"; 
+                // NEW: Use "2753" (Question Mark) as the hex fallback
+                const newSymbol = availableSymbols.length > 0 ? availableSymbols[0] : "2753"; 
 
                 const playerKey = `players.${currentUserId}`;
                 const newPlayer = {
@@ -739,7 +753,8 @@
                         name: players[currentUserId].name,
                         word: word,
                         round: round,
-                        gameTurn: gameTurn
+                        gameTurn: gameTurn,
+                        reactions: {} // NEW: Add empty reactions object
                     })
                 });
                 wordInput.value = "";
@@ -893,6 +908,79 @@
             }
         }
         
+        // --- NEW: Reaction Functions ---
+        
+        /**
+         * Opens the emoji reaction modal for a specific word.
+         * @param {string} wordIndex - The index of the word in the `words` array.
+         */
+        function openReactModal(wordIndex) {
+            if (!localGameData.players[currentUserId]?.isAlive) {
+                return showError("Eliminated players can't react.");
+            }
+            
+            reactingToWordIndex = parseInt(wordIndex); // Store the index
+            
+            // Populate the modal with emoji buttons
+            reactEmojiList.innerHTML = REACTION_EMOJIS.map(hex => `
+                <button class="emoji-react-button neu-button neu-outset-sm p-2 rounded-lg" data-emoji-hex="${hex}">
+                    <img src="${getEmojiUrl(hex)}" alt="emoji" class="w-8 h-8">
+                </button>
+            `).join("");
+            
+            reactModal.classList.remove("hidden");
+        }
+
+        /**
+         * Submits an emoji reaction for a word.
+         * Uses the "Read-and-Rewrite" array update method for Firestore.
+         * @param {number} wordIndex - The index of the word in the `words` array.
+         * @param {string} emojiHex - The hex code of the emoji reaction.
+         */
+        async function submitReaction(wordIndex, emojiHex) {
+            if (wordIndex === null || !currentUserId || !currentGameId) return;
+
+            // 1. Create a deep copy of the words array
+            const newWordsArray = JSON.parse(JSON.stringify(localGameData.words));
+            
+            if (!newWordsArray[wordIndex]) {
+                console.error("Word index out of bounds:", wordIndex);
+                return;
+            }
+
+            // 2. Modify the specific word's reactions
+            if (!newWordsArray[wordIndex].reactions) {
+                newWordsArray[wordIndex].reactions = {};
+            }
+
+            // Toggle logic: If clicking the same emoji, remove reaction.
+            if (newWordsArray[wordIndex].reactions[currentUserId] === emojiHex) {
+                delete newWordsArray[wordIndex].reactions[currentUserId];
+            } else {
+                // Add or update reaction
+                newWordsArray[wordIndex].reactions[currentUserId] = emojiHex;
+            }
+            
+            try {
+                // 3. Write the entire modified array back to Firestore
+                const gameRef = getGameDocRef(currentGameId);
+                await updateDoc(gameRef, {
+                    words: newWordsArray 
+                });
+                
+                // Close modal
+                reactModal.classList.add("hidden");
+                reactingToWordIndex = null;
+                // Snapshot listener will handle the UI update
+                
+            } catch (error) {
+                console.error("Error submitting reaction:", error);
+                showError("Could not submit reaction.");
+            }
+        }
+        
+        // --- End of NEW Reaction Functions ---
+        
         async function playAgain() {
             if (!isHost) return;
             
@@ -965,8 +1053,11 @@
                 lobbyGameIdDisplay.textContent = `Game ID: ${gameData.gameId}`;
                 
                 const players = Object.values(gameData.players);
+                // NEW: Use img tag for emoji
                 lobbyPlayerList.innerHTML = players.map(p => 
-                    `<li class="neu-outset-sm p-2">${p.symbol} ${p.name}</li>`
+                    `<li class="neu-outset-sm p-2 flex items-center">
+                        <img src="${getEmojiUrl(p.symbol)}" alt="icon" class="w-5 h-5 mr-2"> ${p.name}
+                    </li>`
                 ).join("");
                 
                 // Host controls
@@ -1012,19 +1103,44 @@
                 wordInputContainer.classList.toggle("hidden", !isMyTurn || !amIAlive);
 
                 // Word List
-                gameWordList.innerHTML = gameData.words.map(w => {
-                    const playerSymbol = gameData.players[w.player]?.symbol || "❔";
+                // NEW: Updated to show reactions and react button
+                gameWordList.innerHTML = gameData.words.map((w, index) => {
+                    const playerSymbolHex = gameData.players[w.player]?.symbol;
+                    const playerSymbolImg = playerSymbolHex ? `<img src="${getEmojiUrl(playerSymbolHex)}" alt="icon" class="w-5 h-5 mr-2">` : "❔";
+                    
+                    // Generate HTML for reactions
+                    const reactionsHTML = Object.entries(w.reactions || {}).map(([userId, emojiHex]) => {
+                        const reactorSymbolHex = gameData.players[userId]?.symbol || "2753"; // Fallback '?'
+                        return `<div class="neu-inset px-2 py-1 rounded-full flex items-center text-xs">
+                                    <img src="${getEmojiUrl(reactorSymbolHex)}" alt="icon" class="w-3 h-3 mr-1">
+                                    <img src="${getEmojiUrl(emojiHex)}" alt="reaction" class="w-4 h-4">
+                                </div>`;
+                    }).join("");
+
                     return `<li class="neu-outset-sm p-2">
-                        <span class="font-bold text-indigo-600">${playerSymbol} ${w.name} (R${w.round}):</span>
-                        <span class="ml-2 text-gray-800">${w.word}</span>
+                        <span class="font-bold text-indigo-600 flex items-center">
+                            ${playerSymbolImg} ${w.name} (R${w.round}):
+                        </span>
+                        <span class="ml-2 text-gray-800 break-words">${w.word}</span>
+                        
+                        <!-- NEW: Reactions Display -->
+                        <div class="flex flex-wrap gap-1 mt-2">
+                            ${reactionsHTML}
+                        </div>
+
+                        <!-- NEW: React Button -->
+                        <button class="react-button neu-button neu-outset-sm p-1 text-xs mt-2 ml-auto block" data-word-index="${index}">
+                            React
+                        </button>
                     </li>`
                 }).join("");
                 gameWordList.scrollTop = gameWordList.scrollHeight;
                 
                 // Player List
+                // NEW: Use img tag for emoji
                 gamePlayerList.innerHTML = Object.values(gameData.players).map(p => 
-                    `<li class="p-2 rounded-lg ${p.isAlive ? 'neu-outset-sm' : 'neu-inset text-gray-500 line-through'}">
-                        ${p.symbol} ${p.name}
+                    `<li class="p-2 rounded-lg flex items-center ${p.isAlive ? 'neu-outset-sm' : 'neu-inset text-gray-500 line-through'}">
+                        <img src="${getEmojiUrl(p.symbol)}" alt="icon" class="w-5 h-5 mr-2"> ${p.name}
                         ${p.isAlive ? '' : ' (Eliminated)'}
                     </li>`
                 ).join("");
@@ -1042,9 +1158,12 @@
                     .map(id => {
                         const player = gameData.players[id];
                         const isMe = id === currentUserId;
-                        const playerSymbol = player.symbol || "❔"; 
-                        return `<button data-vote-id="${id}" class="vote-button w-full p-3 rounded-lg neu-button neu-outset ${isMe ? 'neu-button-gray opacity-50 cursor-not-allowed' : 'neu-button-red'}">
-                            Vote ${playerSymbol} ${player.name} ${isMe ? '(You)' : ''}
+                        // NEW: Use img tag for emoji
+                        const playerSymbolHex = player.symbol;
+                        const playerSymbolImg = playerSymbolHex ? `<img src="${getEmojiUrl(playerSymbolHex)}" alt="icon" class="w-5 h-5 mr-2">` : "❔";
+                        
+                        return `<button data-vote-id="${id}" class="vote-button w-full p-3 rounded-lg neu-button neu-outset ${isMe ? 'neu-button-gray opacity-50 cursor-not-allowed' : 'neu-button-red'} flex items-center justify-center">
+                            Vote ${playerSymbolImg} ${player.name} ${isMe ? '(You)' : ''}
                         </button>`;
                     }).join("");
                 votingModal.classList.remove("hidden");
@@ -1058,11 +1177,12 @@
                 gameOverWinner.textContent = `${gameData.winner} Win!`;
                 gameOverSecretWord.textContent = `Word: ${gameData.secretWord} (Theme: ${gameData.theme})`;
                 
+                // NEW: Use img tag for emoji and render as HTML
                 const infiltradoNames = Object.values(gameData.players)
                     .filter(p => p.role === "Infiltrado")
-                    .map(p => `${p.symbol} ${p.name}`) 
+                    .map(p => `<span class="inline-flex items-center justify-center mx-1"><img src="${getEmojiUrl(p.symbol)}" alt="icon" class="w-5 h-5 mr-1"> ${p.name}</span>`) 
                     .join(", ");
-                gameOverInfiltrados.textContent = `Infiltrados: ${infiltradoNames}`;
+                gameOverInfiltrados.innerHTML = `Infiltrados: ${infiltradoNames}`;
                 
                 playAgainButton.classList.toggle("hidden", !isHost);
                 gameOverModal.classList.remove("hidden");
@@ -1158,6 +1278,11 @@
             leaveGameButton = $("#leave-game-button");
             playAgainButton = $("#play-again-button");
 
+            // NEW: Reaction Modal Assignments
+            reactModal = $("#react-modal");
+            reactEmojiList = $("#react-emoji-list");
+            closeReactModal = $("#close-react-modal");
+
             // --- End of NEW DOM Assignments ---
 
             // NEW: Init Three.js first
@@ -1179,6 +1304,28 @@
                 if (e.key === "Enter") submitWord();
             });
             
+            // NEW: Event delegation for reaction buttons
+            gameWordList.addEventListener("click", (e) => {
+                const button = e.target.closest(".react-button");
+                if (button && button.dataset.wordIndex) {
+                    openReactModal(button.dataset.wordIndex);
+                }
+            });
+            
+            // NEW: Listeners for the reaction modal
+            closeReactModal.addEventListener("click", () => {
+                reactModal.classList.add("hidden");
+                reactingToWordIndex = null;
+            });
+            
+            reactEmojiList.addEventListener("click", (e) => {
+                const button = e.target.closest(".emoji-react-button");
+                if (button && reactingToWordIndex !== null) {
+                    const emojiHex = button.dataset.emojiHex;
+                    submitReaction(reactingToWordIndex, emojiHex);
+                }
+            });
+
             votingPlayerButtons.addEventListener("click", (e) => {
                 const button = e.target.closest(".vote-button");
                 if (button && button.dataset.voteId) {
@@ -1264,6 +1411,8 @@
                 </button>
                 <p id="login-error" class="text-red-600 text-sm text-center h-4"></p>
             </div>
+            <!-- NEW: Version Number -->
+            <p class="text-xs text-gray-500 text-center mt-6">v1.2.0</p>
         </div>
     </section>
 
@@ -1441,6 +1590,19 @@
                 Play Again (Host)
             </button>
             <p class="text-sm text-gray-600">Wait for the host to start a new game.</p>
+        </div>
+    </div>
+
+    <!-- NEW: Emoji React Modal -->
+    <div id="react-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div class="neu-outset p-6 rounded-2xl shadow-xl w-full max-w-sm">
+            <h2 class="text-2xl font-bold text-gray-800 text-center mb-4">React to Word</h2>
+            <div id="react-emoji-list" class="flex flex-wrap justify-center gap-2">
+                <!-- Emojis populated by JS -->
+            </div>
+            <button id="close-react-modal" class="w-full p-2 mt-4 rounded-lg neu-button neu-outset neu-button-gray">
+                Cancel
+            </button>
         </div>
     </div>
 
