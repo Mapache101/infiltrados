@@ -517,13 +517,26 @@
                 return showError("Game has already started.");
             }
 
-            if (Object.keys(gameData.players).length >= gameData.settings.totalPlayers) {
-                return showError("Game is full.");
-            }
+            // REMOVED: Check for game full. Anyone can join a lobby.
+            // if (Object.keys(gameData.players).length >= gameData.settings.totalPlayers) {
+            //     return showError("Game is full.");
+            // }
             
             if (gameData.players[currentUserId]) {
                 console.log("Rejoining lobby...");
             } else {
+                // NEW: Check if we need to update settings
+                const newPlayerCount = Object.keys(gameData.players).length + 1;
+                let settingsUpdate = {};
+                if (newPlayerCount > gameData.settings.totalPlayers) {
+                    settingsUpdate['settings.totalPlayers'] = newPlayerCount;
+                    // Also, we must ensure infiltrados is not >= new player count
+                    if (gameData.settings.infiltradosCount >= newPlayerCount) {
+                        // Set infiltrados to a safe number, e.g., new count - 1, or 1 if 2 players
+                        settingsUpdate['settings.infiltradosCount'] = Math.max(1, newPlayerCount - 1); 
+                    }
+                }
+
                 const existingSymbols = Object.values(gameData.players).map(p => p.symbol);
                 const availableSymbols = PLAYER_SYMBOLS.filter(s => !existingSymbols.includes(s));
                 const newSymbol = availableSymbols.length > 0 ? availableSymbols[0] : "❔"; 
@@ -540,7 +553,8 @@
                 try {
                     await updateDoc(gameRef, { 
                         [playerKey]: newPlayer,
-                        log: arrayUnion(`${currentUsername} joined the lobby.`)
+                        log: arrayUnion(`${currentUsername} joined the lobby.`),
+                        ...settingsUpdate // NEW: Add the settings update
                     });
                     console.log("Joined game:", gameId);
                 } catch (error) {
@@ -614,22 +628,28 @@
 
             const isDebugMode = (currentUsername === "debug" || currentUsername === "admin");
 
-            if (playerIds.length !== gameData.settings.totalPlayers && !isDebugMode) { 
-                return showError(`Waiting for ${gameData.settings.totalPlayers} players. Currently have ${playerIds.length}.`);
+            // REMOVED: Check that player count matches setting.
+            // if (playerIds.length !== gameData.settings.totalPlayers && !isDebugMode) { 
+            //     return showError(`Waiting for ${gameData.settings.totalPlayers} players. Currently have ${playerIds.length}.`);
+            // }
+
+            // NEW: But we must check for minimum players
+            if (playerIds.length < 3 && !isDebugMode) { // A game needs at least 3 players
+                return showError(`You need at least 3 players to start. Currently have ${playerIds.length}.`);
             }
 
-            if (isDebugMode && playerIds.length < gameData.settings.totalPlayers) {
-                console.warn("DEBUG MODE: Starting game with fewer players than setting.");
-                gameData.settings.totalPlayers = playerIds.length;
-                
-                if (gameData.settings.infiltradosCount >= playerIds.length) {
-                    gameData.settings.infiltradosCount = 1; 
-                    console.warn("DEBUG MODE: Infiltrado count adjusted to 1.");
-                }
+            // NEW: And we must validate the infiltrado count against the *actual* player count
+            let infiltradosCount = gameData.settings.infiltradosCount;
+            if (infiltradosCount >= playerIds.length) {
+                // Too many infiltrados for the number of players.
+                infiltradosCount = Math.max(1, playerIds.length - 2); // e.g., 3 players -> 1 infiltrado.
+                console.warn(`Infiltrado count was too high. Adjusted to ${infiltradosCount}.`);
+                // We could even update this in Firestore, but for now, just use it locally
             }
             
             // --- Assign Roles ---
-            const { infiltradosCount } = gameData.settings;
+            // const { infiltradosCount } = gameData.settings; // OLD
+            // Use the *validated* infiltradosCount
             const newPlayers = { ...gameData.players };
             const shuffledPlayerIds = playerIds.sort(() => 0.5 - Math.random());
             
@@ -637,7 +657,7 @@
             
             for (let i = 0; i < shuffledPlayerIds.length; i++) {
                 const id = shuffledPlayerIds[i];
-                if (i < infiltradosCount) {
+                if (i < infiltradosCount) { // Use the validated count
                     newPlayers[id].role = "Infiltrado";
                     infiltradoIds.push(newPlayers[id].name); 
                 } else {
