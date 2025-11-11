@@ -190,7 +190,10 @@
         // NEW: Helper function for OpenMoji URLs
         function getEmojiUrl(hexCode) {
             // Using 72x72 PNGs from OpenMoji CDN
-            return `https://openmoji.org/data/color/72x72/${hexCode}.png`;
+            // OLD URL: return `https://openmoji.org/data/color/72x72/${hexCode}.png`;
+            
+            // NEW URL: Using jsDelivr CDN to pull from the OpenMoji GitHub repo. This one works!
+            return `https://cdn.jsdelivr.net/gh/openmoji/openmoji/color/72x72/${hexCode}.png`;
         }
 
         // --- Firebase Initialization ---
@@ -1412,7 +1415,7 @@
                 <p id="login-error" class="text-red-600 text-sm text-center h-4"></p>
             </div>
             <!-- NEW: Version Number -->
-            <p class="text-xs text-gray-500 text-center mt-6">v1.2.0</p>
+            <p class="text-xs text-gray-500 text-center mt-6">v1.2.1</p>
         </div>
     </section>
 
