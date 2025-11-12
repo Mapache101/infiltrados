@@ -1,0 +1,1664 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infiltrados Online 3D</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- NEW: Custom styles for "Glassmorphism" (Dark) -->
+    <style>
+        :root {
+            --glass-bg: rgba(15, 23, 42, 0.7); /* slate-900/70 */
+            --glass-bg-inset: rgba(30, 41, 59, 0.5); /* slate-800/50 */
+            --glass-border: rgba(51, 65, 85, 0.5); /* slate-700/50 */
+            --glass-border-light: rgba(71, 85, 105, 0.5); /* slate-600/50 */
+            --glass-text: #d1d5db; /* gray-300 */
+            --glass-text-dim: #9ca3af; /* gray-400 */
+            --glass-text-header: #f3f4f6; /* gray-100 */
+            --glass-accent: #60a5fa; /* blue-400 */
+            --glass-green: #4ade80; /* green-400 */
+            --glass-red: #f87171; /* red-400 */
+        }
+        /* Make HTML elements invisible by default, CSS3DRenderer will manage them */
+        body > section, body > div[id$="-modal"] {
+            display: none;
+        }
+
+        /* NEW: Renderer Containers */
+        #webgl-container, #css-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        #webgl-container { z-index: 1; }
+        #css-container { z-index: 2; } /* UI on top */
+
+        body {
+            background-color: #0f172a; /* slate-900 */
+            color: var(--glass-text);
+            overflow: hidden; /* Prevent scrolling */
+        }
+        
+        /* NEW: Glass Panel Styles (replaces neu-outset) */
+        .glass-panel {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border-light);
+            border-radius: 16px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            color: var(--glass-text);
+        }
+        .glass-panel-sm {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border-light);
+            border-radius: 8px;
+            box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            color: var(--glass-text);
+        }
+        
+        /* NEW: Glass Inset Styles (replaces neu-inset) */
+        .glass-inset {
+            background: var(--glass-bg-inset);
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.2);
+            color: var(--glass-text);
+        }
+
+        /* NEW: Glass Input/Select Styles */
+        .glass-input {
+            background: transparent;
+            border: none;
+            color: var(--glass-text);
+            width: 100%;
+        }
+        .glass-input::placeholder {
+            color: var(--glass-text-dim);
+        }
+        .glass-input:focus {
+            outline: none;
+        }
+
+        .glass-select {
+            background: var(--glass-bg-inset);
+            border: 1px solid var(--glass-border);
+            color: var(--glass-text);
+            border-radius: 8px;
+            background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+            background-position: right 0.5rem center;
+            background-repeat: no-repeat;
+            background-size: 1.5em 1.5em;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            padding-right: 2.5rem;
+        }
+        .glass-select:focus {
+            outline: none;
+            border-color: var(--glass-accent);
+        }
+
+        /* NEW: Glass Button Styles (replaces neu-button) */
+        .glass-button {
+            background: rgba(71, 85, 105, 0.6); /* slate-600/60 */
+            border: 1px solid var(--glass-border-light);
+            color: var(--glass-text-header);
+            font-weight: 600;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.2);
+        }
+        .glass-button:hover {
+            background: rgba(100, 116, 139, 0.7); /* slate-500/70 */
+            border-color: var(--glass-border-light);
+        }
+        .glass-button:active, .glass-button-pressed {
+            background: rgba(30, 41, 59, 0.7); /* slate-800/70 */
+            box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.2);
+        }
+        .glass-button-red { color: var(--glass-red); }
+        .glass-button-red:hover { background: rgba(239, 68, 68, 0.7); color: white; }
+        .glass-button-green { color: var(--glass-green); }
+        .glass-button-green:hover { background: rgba(34, 197, 94, 0.7); color: white; }
+        .glass-button-blue { color: var(--glass-accent); }
+        .glass-button-blue:hover { background: rgba(59, 130, 246, 0.7); color: white; }
+        .glass-button-gray { color: var(--glass-text-dim); }
+        .glass-button-gray:hover { background: rgba(100, 116, 139, 0.7); color: var(--glass-text); }
+        
+        /* Ensure all text is readable */
+        h1, h2, h3, h4, label {
+            color: var(--glass-text-header);
+        }
+        p, li, span, div {
+             color: var(--glass-text);
+        }
+        /* Override tailwind colors for this theme */
+        .text-gray-700 { color: var(--glass-text) !important; }
+        .text-gray-800 { color: var(--glass-text-header) !important; }
+        .text-gray-600 { color: var(--glass-text-dim) !important; }
+        .text-indigo-600 { color: var(--glass-accent) !important; }
+        .text-indigo-500 { color: var(--glass-accent) !important; }
+        .text-yellow-600 { color: #facc15 !important; } /* yellow-400 */
+        .text-red-600 { color: var(--glass-red) !important; }
+        .text-green-600 { color: var(--glass-green) !important; }
+        .border-gray-300 { border-color: var(--glass-border) !important; }
+
+    </style>
+    
+    <!-- NO LONGER using global three.js script -->
+    <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script> -->
+
+    <!-- Load Firebase JS SDKs -->
+    <script type="module">
+        // --- NEW: Three.js Module Imports ---
+        import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.module.js';
+        import { CSS3DRenderer, CSS3DObject } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/renderers/CSS3DRenderer.js';
+
+        // --- Firebase Imports ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        // ... (rest of firebase imports are the same)
+        import { 
+            getAuth, 
+            signInAnonymously, 
+            onAuthStateChanged,
+            signInWithCustomToken
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            setDoc, 
+            getDoc, 
+            onSnapshot, 
+            updateDoc,
+            arrayUnion,
+            setLogLevel
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- App State ---
+        let db, auth, app;
+        let currentUserId = null;
+        let currentUsername = "Player";
+        let currentGameId = null;
+        let gameUnsubscribe = null; 
+        let localGameData = {}; 
+        let isHost = false;
+        let isRoleVisible = false; 
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'infiltrados-game';
+        
+        // --- NEW: Emoji React State ---
+        let currentWordIndexToReact = null; 
+        const EMOJI_REACTIONS = ["1F44D", "1F44E", "1F602", "1F615", "1F914", "2753"]; // Thumbs Up, Thumbs Down, Laughing, Confused, Thinking, Question Mark
+        const OFF_SCREEN_POS = 10000; // Y-position to hide 3D objects
+
+        // --- NEW: Three.js State ---
+        let scene, cssScene, camera, renderer, cssRenderer, tableMesh, playerFiguresGroup, skyMesh;
+        let loginObject, lobbyObject, gameContainerObject, votingModalObject, gameOverModalObject, reactModalObject;
+        const playerFigures = new Map(); // Map<userId, THREE.Mesh>
+
+        // Mouse parallax state
+        const mouse = new THREE.Vector2();
+        const targetCameraLook = new THREE.Vector3();
+        const PARALLAX_FACTOR = 0.1;
+
+        // Simple color array for player figures
+        const PLAYER_COLORS = [
+            0xf94144, 0xf3722c, 0xf8961e, 0xf9c74f, 0x90be6d, 
+            0x43aa8b, 0x577590, 0x277da1, 0x6a00f4, 0xc71fcd
+        ];
+        const ELIMINATED_COLOR = 0x666666;
+        const TURN_COLOR = 0xffffff; 
+
+        // --- DOM Elements ---
+        // These are now grabbed inside window.onload
+        let loginSection, lobbySection, gameSection, usernameInput, setUsernameButton, loginError,
+            createGameButton, joinGameButton, gameIdInput, lobbyGameIdDisplay, lobbyPlayerList,
+            startGameButton, totalPlayersSelect, infiltradosSelect, roundsBeforeVoteSelect,
+            customWordContainer, customWordInput, customThemeInput, setCustomWordButton, clearCustomWordButton,
+            gameInfoRole, gameInfoWord, revealRoleButton, gameStatus, gameWordList, gamePlayerList,
+            gameLog, wordInputContainer, wordInput, submitWordButton, gameIdDisplay, gameThemeDisplay,
+            votingModal, votingPlayerButtons, gameOverModal, gameOverWinner, gameOverSecretWord,
+            gameOverInfiltrados, leaveGameButton, playAgainButton,
+            reactModal, reactEmojiButtons;
+            
+        // --- Helper function for correct Firestore path ---
+        function getGameDocRef(gameId) {
+            return doc(db, "artifacts", appId, "public", "data", "games", gameId);
+        }
+
+        // NEW: Helper function for OpenMoji URLs (using unpkg)
+        function getEmojiUrl(hexCode) {
+            return `https://unpkg.com/openmoji/color/72x72/${hexCode}.png`;
+        }
+
+        // --- Firebase Initialization ---
+        async function initFirebase() {
+            try {
+                const firebaseConfig = typeof __firebase_config !== 'undefined'
+                    ? JSON.parse(__firebase_config)
+                    : {
+                        // Fallback config (user's original)
+                        apiKey: "AIzaSyAG6v0TT9miam83wXOB4aqdqD6qbc5GhPo",
+                        authDomain: "infiltrados-game.firebaseapp.com",
+                        projectId: "infiltrados-game",
+                        storageBucket: "infiltrados-game.firebasestorage.app",
+                        messagingSenderId: "742547669169",
+                        appId: "1:742547669169:web:68ee3277c5fb077647a290"
+                    };
+                
+                if (!firebaseConfig.apiKey) {
+                    showError("Firebase config is missing. App cannot start.");
+                    return;
+                }
+
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                setLogLevel('debug'); 
+
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        currentUserId = user.uid;
+                        console.log("User signed in:", currentUserId);
+                        // NEW: We no longer showSection here, firebase init is just for auth
+                    } else {
+                        try {
+                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                                await signInWithCustomToken(auth, __initial_auth_token);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                        } catch (authError) {
+                            console.error("Sign-in failed:", authError);
+                            showError("Failed to connect. Please refresh.");
+                        }
+                    }
+                });
+
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+                showError("Fatal Error: Could not initialize app. Check console.");
+            }
+        }
+
+        // --- NEW: Three.js Initialization ---
+        function initThreeJs() {
+            try {
+                // 1. Scene
+                scene = new THREE.Scene();
+                cssScene = new THREE.Scene(); // NEW: Scene for CSS objects
+
+                // 2. Camera
+                camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+                camera.position.set(0, 3, 10); // Start position
+                targetCameraLook.set(0, 0, -50); // Initial look-at target
+                camera.lookAt(targetCameraLook);
+
+                // 3. WebGL Renderer (for 3D world)
+                renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); // alpha: true
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(window.devicePixelRatio);
+                renderer.setClearColor(0x000000, 0); // Transparent
+                document.getElementById("webgl-container").appendChild(renderer.domElement);
+
+                // 4. CSS3D Renderer (for UI)
+                cssRenderer = new CSS3DRenderer();
+                cssRenderer.setSize(window.innerWidth, window.innerHeight);
+                document.getElementById("css-container").appendChild(cssRenderer.domElement);
+
+                // 5. Lights
+                const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+                scene.add(ambientLight);
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+                directionalLight.position.set(5, 10, 7.5);
+                scene.add(directionalLight);
+
+                // 6. Create "Table"
+                const tableGeometry = new THREE.PlaneGeometry(30, 25);
+                const tableMaterial = new THREE.MeshPhongMaterial({ 
+                    color: 0x334155,
+                    shininess: 20
+                });
+                tableMesh = new THREE.Mesh(tableGeometry, tableMaterial);
+                tableMesh.rotation.x = -Math.PI / 2;
+                tableMesh.position.set(0, -5, -10); // Positioned in 3D space
+                scene.add(tableMesh);
+
+                // 7. Create Stylized Environment
+                const mountainMaterial = new THREE.MeshPhongMaterial({ 
+                    color: 0x475569,
+                    flatShading: true 
+                });
+                const mountainGroup = new THREE.Group();
+                for (let i = 0; i < 30; i++) {
+                    const height = Math.random() * 20 + 5;
+                    const geometry = new THREE.ConeGeometry(Math.random() * 5 + 2, height, 4);
+                    const mountain = new THREE.Mesh(geometry, mountainMaterial);
+                    mountain.position.set(
+                        (Math.random() - 0.5) * 100,
+                        height / 2 - 5,
+                        (Math.random() - 0.5) * 50 - 20
+                    );
+                    mountain.rotation.y = Math.random() * Math.PI;
+                    mountainGroup.add(mountain);
+                }
+                scene.add(mountainGroup);
+
+                // 8. Create Sky
+                const skyGeometry = new THREE.PlaneGeometry(200, 200);
+                const skyMaterial = new THREE.MeshBasicMaterial({ color: 0x1e293b });
+                skyMesh = new THREE.Mesh(skyGeometry, skyMaterial);
+                skyMesh.position.z = -150; // Pushed way back
+                scene.add(skyMesh);
+                
+                // 9. Player Figures Group (will be populated later)
+                playerFiguresGroup = new THREE.Group();
+                playerFiguresGroup.position.set(0, -4.5, -15); // On the far side of the table
+                scene.add(playerFiguresGroup);
+
+                // 10. --- NEW: Create CSS 3D Objects for UI ---
+                // Function to scale and position CSS objects
+                const createCssObject = (element, zPos = -10, yPos = 0) => {
+                    // Make sure element is visible for the renderer
+                    element.style.display = 'block'; 
+                    const object = new CSS3DObject(element);
+                    // Scale down (CSS pixels are huge in 3D)
+                    // We also adjust y-pos to center it
+                    const scale = 0.02;
+                    object.position.set(0, yPos, zPos);
+                    object.scale.set(scale, scale, scale);
+                    cssScene.add(object);
+                    return object;
+                };
+
+                // Create objects for each panel
+                // The y-offset (e.g., 20) is to "center" the 400px tall panel (400 * 0.02 / 2 = 4?)
+                // Let's just use 0 for now and see. The parallax is on x/y look, not y position.
+                // We offset by 1500px in Y to get it centered. (1500 * 0.02 = 30 units... no)
+                // Let's try to center them. The sections are ~800px high. 800 * 0.02 = 16. So y-offset = 8.
+                const yOffset = 8; 
+
+                loginObject = createCssObject(loginSection, -20, yOffset);
+                lobbyObject = createCssObject(lobbySection, -20, yOffset);
+                gameContainerObject = createCssObject(gameSection, -20, yOffset);
+                
+                // Modals (closer)
+                votingModalObject = createCssObject(votingModal, -18, yOffset);
+                gameOverModalObject = createCssObject(gameOverModal, -18, yOffset);
+                reactModalObject = createCssObject(reactModal, -18, yOffset);
+
+                // Set initial state
+                showSection("login"); // This will now use 3D positions
+                votingModalObject.position.y = OFF_SCREEN_POS;
+                gameOverModalObject.position.y = OFF_SCREEN_POS;
+                reactModalObject.position.y = OFF_SCREEN_POS;
+
+
+                // 11. Start Animation Loop
+                animate();
+
+            } catch (err) {
+                console.error("Error in Three.js init:", err);
+                document.body.innerHTML = `<div class="text-red-500 p-8">A fatal error occurred while initializing the 3D scene. ${err.message}</div>`;
+            }
+        }
+
+        // --- NEW: Three.js Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Smoothly interpolate camera look-at
+            camera.lookAt(targetCameraLook.lerp(mouse, 0.05));
+
+            // Render both scenes
+            renderer.render(scene, camera);
+            cssRenderer.render(cssScene, camera);
+        }
+
+        // --- NEW: Three.js Resize and Parallax Handlers ---
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            cssRenderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onDocumentMouseMove(event) {
+            // Normalized mouse position (-1 to +1)
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            // Set target look-at based on mouse, but keep Z
+            targetCameraLook.set(
+                mouse.x * PARALLAX_FACTOR,
+                mouse.y * PARALLAX_FACTOR + 3, // Adjust base height
+                -10 // Look-at point Z
+            );
+        }
+
+        // --- UI State Management (NOW 3D) ---
+        function showSection(section) {
+            // Hide all by moving them
+            if (loginObject) loginObject.position.y = OFF_SCREEN_POS;
+            if (lobbyObject) lobbyObject.position.y = OFF_SCREEN_POS;
+            if (gameContainerObject) gameContainerObject.position.y = OFF_SCREEN_POS;
+            
+            // Show the correct one
+            const yOffset = 8; // From init
+            if (section === "login" && loginObject) loginObject.position.y = yOffset;
+            if (section === "lobby" && lobbyObject) lobbyObject.position.y = yOffset;
+            if (section === "game" && gameContainerObject) gameContainerObject.position.y = yOffset;
+        }
+
+        function showError(message) {
+            console.error("ERROR:", message);
+            if(gameStatus) {
+                gameStatus.textContent = `Error: ${message}`;
+                gameStatus.classList.add("text-red-600");
+            } else if (loginError) {
+                loginError.textContent = message;
+            }
+        }
+
+        // --- Game Logic (Mostly Unchanged) ---
+
+        // (generateGameId, getEmojiUrl, initFirebase... are above)
+
+        function handleUsername() {
+            loginError.textContent = ""; 
+            const username = usernameInput.value.trim();
+            if (username.length >= 2) {
+                currentUsername = username;
+                usernameInput.disabled = true;
+                setUsernameButton.textContent = "Welcome!";
+                setUsernameButton.disabled = true;
+                // Now that we have a username, try init Firebase
+                initFirebase();
+            } else {
+                loginError.textContent = "Please enter a name (min 2 chars).";
+            }
+        }
+
+        async function createGame() {
+            if (!currentUserId) return showError("Not authenticated.");
+
+            const gameId = generateGameId();
+            currentGameId = gameId;
+            isHost = true;
+
+            const settings = {
+                totalPlayers: parseInt(totalPlayersSelect.value),
+                infiltradosCount: parseInt(infiltradosSelect.value),
+                roundsBeforeVote: parseInt(roundsBeforeVoteSelect.value),
+            };
+
+            const gameDoc = {
+                gameId: gameId,
+                hostId: currentUserId,
+                state: "lobby", 
+                settings: settings,
+                players: {
+                    [currentUserId]: {
+                        name: currentUsername,
+                        isAlive: true,
+                        role: null,
+                        vote: null,
+                        symbol: PLAYER_SYMBOLS[0] 
+                    }
+                },
+                secretWord: "",
+                customWord: "", 
+                customTheme: "", 
+                theme: "", 
+                turn: null, 
+                round: 1, 
+                gameTurn: 1, 
+                words: [], // { player, name, word, round, gameTurn, reactions: { userId: emojiHex } }
+                log: [`Game created by ${currentUsername}`],
+                winner: null
+            };
+
+            try {
+                const gameRef = getGameDocRef(gameId); 
+                await setDoc(gameRef, gameDoc);
+                console.log("Game created with ID:", gameId);
+                await subscribeToGame(gameId);
+            } catch (error) {
+                console.error("Error creating game:", error);
+                showError("Could not create game.");
+            }
+        }
+
+        async function joinGame() {
+            if (!currentUserId) return showError("Not authenticated.");
+
+            const gameId = gameIdInput.value.trim().toUpperCase();
+            if (!gameId) return showError("Please enter a Game ID.");
+
+            const gameRef = getGameDocRef(gameId); 
+            const gameSnap = await getDoc(gameRef);
+
+            if (!gameSnap.exists()) {
+                return showError("Game not found.");
+            }
+
+            const gameData = gameSnap.data();
+            
+            if (gameData.state !== "lobby") {
+                return showError("Game has already started.");
+            }
+
+            // --- LOGIC CHANGE (v1.2.0) ---
+            // Allow joining a lobby that is "full"
+            // We removed the check for:
+            // Object.keys(gameData.players).length >= gameData.settings.totalPlayers
+            // --- End Change ---
+            
+            if (gameData.players[currentUserId]) {
+                 console.log("Rejoining lobby...");
+            } else {
+                const existingSymbols = Object.values(gameData.players).map(p => p.symbol);
+                const availableSymbols = PLAYER_SYMBOLS.filter(s => !existingSymbols.includes(s));
+                const newSymbol = availableSymbols.length > 0 ? availableSymbols[0] : "2753"; 
+
+                const playerKey = `players.${currentUserId}`;
+                const newPlayer = {
+                    name: currentUsername,
+                    isAlive: true,
+                    role: null,
+                    vote: null,
+                    symbol: newSymbol
+                };
+                
+                try {
+                    // --- LOGIC CHANGE (v1.2.0) ---
+                    // If lobby is full, update the setting to match new count
+                    const newPlayerCount = Object.keys(gameData.players).length + 1;
+                    const updates = {
+                        [playerKey]: newPlayer,
+                        log: arrayUnion(`${currentUsername} joined the lobby.`)
+                    };
+
+                    if (newPlayerCount > gameData.settings.totalPlayers) {
+                        updates['settings.totalPlayers'] = newPlayerCount;
+                        // Also validate infiltrados count
+                        if (gameData.settings.infiltradosCount >= newPlayerCount) {
+                             updates['settings.infiltradosCount'] = newPlayerCount - 1; // Ensure at least 1 regular
+                        }
+                    }
+                    
+                    await updateDoc(gameRef, updates);
+                    // --- End Change ---
+                    console.log("Joined game:", gameId);
+                } catch (error) {
+                    console.error("Error joining game:", error);
+                    return showError("Could not join game.");
+                }
+            }
+
+            currentGameId = gameId;
+            isHost = (gameData.hostId === currentUserId);
+            await subscribeToGame(gameId);
+        }
+
+        async function subscribeToGame(gameId) {
+            if (gameUnsubscribe) {
+                gameUnsubscribe();
+            }
+            
+            const gameRef = getGameDocRef(gameId); 
+            gameUnsubscribe = onSnapshot(gameRef, (docSnap) => {
+                if (!docSnap.exists()) {
+                    showError("Game not found or was deleted.");
+                    leaveGame();
+                    return;
+                }
+
+                const gameData = docSnap.data();
+                localGameData = gameData; 
+                updateUI(gameData);
+                update3DScene(gameData); // NEW: Update 3D pawns
+
+                // --- Host-Only Logic ---
+                if (isHost) {
+                    if (gameData.state === "voting" && didAllAlivePlayersVote(gameData)) {
+                        tallyVotes(gameData);
+                    }
+                    if (gameData.state === "word_round" && shouldRoundEnd(gameData)) {
+                        startVoting(gameData);
+                    }
+                }
+
+            }, (error) => {
+                console.error("Snapshot error:", error);
+                showError("Connection to game lost.");
+            });
+        }
+
+        function leaveGame() {
+            if (gameUnsubscribe) {
+                gameUnsubscribe();
+                gameUnsubscribe = null;
+            }
+            currentGameId = null;
+            isHost = false;
+            localGameData = {};
+            isRoleVisible = false; 
+            showSection("lobby");
+            lobbyGameIdDisplay.textContent = "";
+            lobbyPlayerList.innerHTML = "";
+            gameIdInput.value = "";
+            customWordContainer.classList.add("hidden"); 
+            
+            // NEW: Clear 3D players
+            playerFigures.clear();
+            while(playerFiguresGroup.children.length > 0){ 
+                playerFiguresGroup.remove(playerFiguresGroup.children[0]); 
+            }
+        }
+
+        async function startGame() {
+            if (!isHost || !currentGameId) return;
+
+            const gameData = localGameData;
+            const playerIds = Object.keys(gameData.players);
+
+            // --- LOGIC CHANGE (v1.2.0) ---
+            // Allow starting with 3+ players, regardless of setting
+            if (playerIds.length < 3) {
+                 return showError(`Need at least 3 players to start. Currently have ${playerIds.length}.`);
+            }
+            // Ensure infiltrados count is valid for the *actual* number of players
+            let infiltradosCount = gameData.settings.infiltradosCount;
+            if (infiltradosCount >= playerIds.length) {
+                infiltradosCount = playerIds.length - 1; // Max possible
+                console.warn(`Infiltrado count adjusted to ${infiltradosCount}`);
+            }
+            // --- End Change ---
+            
+            // --- Assign Roles ---
+            const newPlayers = { ...gameData.players };
+            const shuffledPlayerIds = playerIds.sort(() => 0.5 - Math.random());
+            
+            for (let i = 0; i < shuffledPlayerIds.length; i++) {
+                const id = shuffledPlayerIds[i];
+                if (i < infiltradosCount) {
+                    newPlayers[id].role = "Infiltrado";
+                } else {
+                    newPlayers[id].role = "Regular";
+                }
+            }
+
+            // --- Pick Word & Start Player ---
+            const customWord = gameData.customWord;
+            const customTheme = gameData.customTheme;
+            const secretWord = customWord || SECRET_WORDS[Math.floor(Math.random() * SECRET_WORDS.length)];
+            const theme = customWord ? (customTheme || "General") : "Location/Place"; 
+            
+            const regularPlayerIds = Object.keys(newPlayers).filter(id => newPlayers[id].role === "Regular");
+            let startPlayerId;
+            if (regularPlayerIds.length > 0) {
+                startPlayerId = regularPlayerIds[Math.floor(Math.random() * regularPlayerIds.length)];
+            } else {
+                console.warn("No regular players found! Starting with a random player.");
+                startPlayerId = shuffledPlayerIds[Math.floor(Math.random() * shuffledPlayerIds.length)];
+            }
+
+            try {
+                const gameRef = getGameDocRef(currentGameId); 
+                await updateDoc(gameRef, {
+                    state: "word_round",
+                    players: newPlayers,
+                    secretWord: secretWord,
+                    theme: theme, 
+                    customWord: "", 
+                    customTheme: "", 
+                    turn: startPlayerId,
+                    round: 1,
+                    gameTurn: 1,
+                    words: [],
+                    log: arrayUnion(`Game started! Theme: ${theme}. Roles assigned.`),
+                    // --- LOGIC CHANGE (v1.2.0) ---
+                    // Sync settings with actual player count
+                    'settings.totalPlayers': playerIds.length,
+                    'settings.infiltradosCount': infiltradosCount
+                    // --- End Change ---
+                });
+            } catch (error) {
+                console.error("Error starting game:", error);
+                showError("Could not start game.");
+            }
+        }
+        
+        // --- In-Game Actions ---
+
+        async function submitWord() {
+            const word = wordInput.value.trim();
+            if (word.length < 2 || word.includes(" ")) {
+                return showError("Please enter a single, valid word.");
+            }
+            
+            if (localGameData.turn !== currentUserId) {
+                return showError("It's not your turn!");
+            }
+
+            const { players, round, settings, gameTurn } = localGameData;
+            const totalAlive = Object.values(players).filter(p => p.isAlive).length;
+            const wordsThisRound = localGameData.words.filter(w => w.gameTurn === gameTurn && w.round === round).length;
+
+            const nextPlayer = findNextAlivePlayer(currentUserId);
+            let nextRound = round;
+            let nextState = "word_round";
+            let nextTurn = nextPlayer;
+            
+            if (wordsThisRound + 1 === totalAlive) {
+                nextRound = round + 1;
+                nextTurn = findNextAlivePlayer(nextPlayer, true, localGameData.turn); 
+            }
+
+            try {
+                const gameRef = getGameDocRef(currentGameId); 
+                await updateDoc(gameRef, {
+                    state: nextState,
+                    turn: nextTurn,
+                    round: nextRound,
+                    words: arrayUnion({
+                        player: currentUserId,
+                        name: players[currentUserId].name,
+                        word: word,
+                        round: round,
+                        gameTurn: gameTurn,
+                        reactions: {} // NEW: Add empty reactions object
+                    })
+                });
+                wordInput.value = "";
+            } catch (error) {
+                console.error("Error submitting word:", error);
+                showError("Could not submit word.");
+            }
+        }
+
+        // NEW: Submit Emoji Reaction
+        async function submitReaction(emojiHex) {
+            if (currentWordIndexToReact === null || !currentGameId) return;
+            
+            const gameRef = getGameDocRef(currentGameId);
+            const gameData = localGameData; // Use local cache
+            const newWords = [...gameData.words]; // Deep copy
+            
+            const wordToReact = newWords[currentWordIndexToReact];
+            if (!wordToReact) {
+                console.error("Word not found for reaction.");
+                return;
+            }
+            
+            // Toggle reaction: if same emoji, remove. Else, add/update.
+            if (wordToReact.reactions[currentUserId] === emojiHex) {
+                delete wordToReact.reactions[currentUserId];
+            } else {
+                wordToReact.reactions[currentUserId] = emojiHex;
+            }
+            
+            try {
+                // We must update the *entire* words array
+                await updateDoc(gameRef, {
+                    words: newWords
+                });
+                // Close modal
+                reactModalObject.position.y = OFF_SCREEN_POS;
+                currentWordIndexToReact = null;
+            } catch (error) {
+                console.error("Error submitting reaction:", error);
+                showError("Could not submit reaction.");
+            }
+        }
+        
+        // Host-only check
+        function shouldRoundEnd(gameData) {
+            const { players, round, settings, gameTurn, words } = gameData;
+            
+            if (round > 1 && (round - 1) % settings.roundsBeforeVote === 0) {
+                 const totalAlive = Object.values(players).filter(p => p.isAlive).length;
+                 const wordsInLastRound = words.filter(w => w.gameTurn === gameTurn && w.round === (round - 1)).length;
+                 
+                 if (wordsInLastRound === totalAlive) {
+                      return true;
+                 }
+            }
+            return false;
+        }
+
+        // Host-only action
+        async function startVoting(gameData) {
+            const playerUpdates = {};
+            Object.keys(gameData.players).forEach(id => {
+                if (gameData.players[id].isAlive) {
+                    playerUpdates[`players.${id}.vote`] = null;
+                }
+            });
+            
+            try {
+                const gameRef = getGameDocRef(currentGameId); 
+                await updateDoc(gameRef, {
+                    ...playerUpdates,
+                    state: "voting",
+                    turn: null, 
+                    log: arrayUnion(`--- Time to Vote (Turn ${gameData.gameTurn}) ---`)
+                });
+            } catch (error) {
+                console.error("Error starting vote:", error);
+            }
+        }
+
+        async function submitVote(votedPlayerId) {
+            if (localGameData.state !== "voting" || !localGameData.players[currentUserId].isAlive) {
+                return showError("You can't vote right now.");
+            }
+            
+            votingModalObject.position.y = OFF_SCREEN_POS;
+            
+            try {
+                const gameRef = getGameDocRef(currentGameId); 
+                await updateDoc(gameRef, {
+                    [`players.${currentUserId}.vote`]: votedPlayerId
+                });
+            } catch (error) {
+                console.error("Error submitting vote:", error);
+            }
+        }
+
+        // Host-only check
+        function didAllAlivePlayersVote(gameData) {
+            return Object.values(gameData.players).every(p => !p.isAlive || p.vote !== null);
+        }
+
+        // Host-only action
+        async function tallyVotes(gameData) {
+            const votes = {};
+            let tiedPlayers = [];
+            let maxVotes = 0;
+            
+            Object.values(gameData.players).forEach(p => {
+                if (p.isAlive && p.vote) {
+                    votes[p.vote] = (votes[p.vote] || 0) + 1;
+                }
+            });
+
+            for (const playerId in votes) {
+                if (votes[playerId] > maxVotes) {
+                    maxVotes = votes[playerId];
+                }
+            }
+
+            for (const playerId in votes) {
+                if (votes[playerId] === maxVotes) {
+                    tiedPlayers.push(playerId);
+                }
+            }
+            
+            let eliminatedPlayerId;
+            let logMessage;
+
+            if (tiedPlayers.length === 0) {
+                console.warn("No votes cast? Defaulting to random elim.");
+                const alivePlayers = Object.keys(gameData.players).filter(id => gameData.players[id].isAlive);
+                eliminatedPlayerId = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
+                logMessage = "No votes were cast! By random choice,";
+                
+            } else if (tiedPlayers.length === 1) {
+                eliminatedPlayerId = tiedPlayers[0];
+                logMessage = "The votes are in!";
+            } else {
+                eliminatedPlayerId = tiedPlayers[Math.floor(Math.random() * tiedPlayers.length)];
+                logMessage = `A tie! By random choice,`;
+            }
+
+            const eliminatedPlayer = gameData.players[eliminatedPlayerId];
+            logMessage += ` ${eliminatedPlayer.name} is eliminated.`;
+            const revealMessage = `${eliminatedPlayer.name} was... an ${eliminatedPlayer.role}!`;
+
+            // --- Check Win Conditions ---
+            const finalPlayerCounts = { ...gameData.players };
+            finalPlayerCounts[eliminatedPlayerId].isAlive = false;
+            
+            let finalRegulars = 0;
+            let finalInfiltrados = 0;
+            Object.values(finalPlayerCounts).forEach(p => {
+                if (p.isAlive) {
+                    if (p.role === "Regular") finalRegulars++;
+                    if (p.role === "Infiltrado") finalInfiltrados++;
+                }
+            });
+            
+            let nextState = "word_round";
+            let winner = null;
+            
+            if (finalInfiltrados === 0) {
+                nextState = "game_over";
+                winner = "Regulars";
+                logMessage = "The last Infiltrado is out!";
+            } else if (finalInfiltrados >= finalRegulars) {
+                nextState = "game_over";
+                winner = "Infiltrados";
+                logMessage = "The Infiltrados can no longer be outvoted!";
+            }
+
+            const nextTurnPlayer = findNextAlivePlayer(eliminatedPlayerId, false, gameData.turn);
+
+            try {
+                const gameRef = getGameDocRef(currentGameId); 
+                await updateDoc(gameRef, {
+                    [`players.${eliminatedPlayerId}.isAlive`]: false,
+                    state: nextState,
+                    winner: winner,
+                    turn: nextTurnPlayer,
+                    gameTurn: gameData.gameTurn + 1,
+                    log: arrayUnion(logMessage, revealMessage)
+                });
+
+            } catch (error) {
+                console.error("Error in tallyVotes:", error);
+            }
+        }
+        
+        async function playAgain() {
+            if (!isHost) return;
+            
+            const newPlayers = { ...localGameData.players };
+            Object.keys(newPlayers).forEach(id => {
+                newPlayers[id].isAlive = true;
+                newPlayers[id].role = null;
+                newPlayers[id].vote = null;
+            });
+            
+            try {
+                 const gameRef = getGameDocRef(currentGameId); 
+                 await updateDoc(gameRef, {
+                    state: "lobby",
+                    players: newPlayers,
+                    secretWord: "",
+                    customWord: "", 
+                    customTheme: "", 
+                    theme: "", 
+                    turn: null,
+                    round: 1,
+                    gameTurn: 1,
+                    words: [],
+                    log: ["Host started a new game!"],
+                    winner: null
+                 });
+            } catch(error) {
+                console.error("Error playing again:", error);
+            }
+        }
+
+        // --- Role Visibility Toggle Function ---
+        function updateRoleVisibility() {
+            if (isRoleVisible) {
+                const myPlayerData = localGameData.players[currentUserId];
+                if (!myPlayerData) return;
+
+                gameInfoRole.textContent = `Role: ${myPlayerData.role}`;
+                gameInfoRole.className = myPlayerData.role === "Infiltrado" ? "text-lg font-bold text-red-600" : "text-lg font-bold text-green-600";
+                
+                if (myPlayerData.role === "Regular") {
+                    gameInfoWord.textContent = `Word: ${localGameData.secretWord}`;
+                } else if (myPlayerData.role === "Infiltrado") {
+                    gameInfoWord.textContent = "Blend in! Guess the word.";
+                }
+                gameInfoWord.classList.remove("hidden");
+                revealRoleButton.textContent = "Hide Role";
+                revealRoleButton.classList.add("glass-button-pressed");
+            } else {
+                gameInfoRole.textContent = "Your Role: [Hidden]";
+                gameInfoRole.className = "text-lg font-bold text-gray-700";
+                gameInfoWord.classList.add("hidden");
+                revealRoleButton.textContent = "Show Role";
+                revealRoleButton.classList.remove("glass-button-pressed");
+            }
+        }
+
+        // --- UI Update Function ---
+        function updateUI(gameData) {
+            const myPlayerData = gameData.players[currentUserId];
+            const amIAlive = myPlayerData && myPlayerData.isAlive;
+
+            // --- Lobby Section ---
+            if (gameData.state === "lobby") {
+                isRoleVisible = false; 
+                showSection("lobby");
+                lobbyGameIdDisplay.textContent = `Game ID: ${gameData.gameId}`;
+                
+                const players = Object.values(gameData.players);
+                lobbyPlayerList.innerHTML = players.map(p => 
+                    `<li class="glass-panel-sm p-2 flex items-center">
+                        <img src="${getEmojiUrl(p.symbol)}" alt="icon" class="w-5 h-5 mr-2"> ${p.name}
+                    </li>`
+                ).join("");
+                
+                // Host controls
+                startGameButton.classList.toggle("hidden", !isHost);
+                document.querySelectorAll(".host-setting").forEach(el => el.disabled = !isHost);
+                if (isHost) {
+                    totalPlayersSelect.value = gameData.settings.totalPlayers;
+                    infiltradosSelect.value = gameData.settings.infiltradosCount;
+                    roundsBeforeVoteSelect.value = gameData.settings.roundsBeforeVote;
+                    customWordContainer.classList.remove("hidden");
+                    customWordInput.value = gameData.customWord || "";
+                    customThemeInput.value = gameData.customTheme || ""; 
+                } else {
+                    customWordContainer.classList.add("hidden");
+                }
+            }
+            
+            // --- Game Section ---
+            if (gameData.state !== "lobby") {
+                showSection("game");
+                customWordContainer.classList.add("hidden");
+                
+                gameIdDisplay.textContent = `Game ID: ${gameData.gameId}`;
+                gameThemeDisplay.textContent = `Theme: ${gameData.theme || "Loading..."}`; 
+
+                revealRoleButton.classList.toggle("hidden", !myPlayerData);
+                updateRoleVisibility(); 
+
+                // Game Status
+                let statusText = "";
+                if (gameData.state === "word_round") {
+                    const turnPlayerName = gameData.players[gameData.turn]?.name || "Someone";
+                    statusText = `Round ${gameData.round}: Waiting for ${turnPlayerName} to speak.`;
+                } else if (gameData.state === "voting") {
+                    statusText = `Time to vote! (Turn ${gameData.gameTurn})`;
+                } else if (gameData.state === "game_over") {
+                    statusText = `Game Over! ${gameData.winner} win!`;
+                }
+                gameStatus.textContent = statusText;
+
+                // Word Input
+                const isMyTurn = gameData.state === "word_round" && gameData.turn === currentUserId;
+                wordInputContainer.classList.toggle("hidden", !isMyTurn || !amIAlive);
+
+                // Word List (with Reactions)
+                gameWordList.innerHTML = gameData.words.map((w, index) => {
+                    const playerSymbolHex = gameData.players[w.player]?.symbol;
+                    const playerSymbolImg = playerSymbolHex ? `<img src="${getEmojiUrl(playerSymbolHex)}" alt="icon" class="w-5 h-5 mr-2">` : "❔";
+                    
+                    // NEW: Render reactions
+                    const reactions = w.reactions || {};
+                    const reactionCounts = {};
+                    Object.values(reactions).forEach(hex => {
+                        reactionCounts[hex] = (reactionCounts[hex] || 0) + 1;
+                    });
+                    const reactionHTML = Object.entries(reactionCounts).map(([hex, count]) => `
+                        <span class="glass-inset px-2 py-0.5 rounded-full flex items-center text-xs">
+                            <img src="${getEmojiUrl(hex)}" class="w-4 h-4 mr-1"> ${count}
+                        </span>
+                    `).join("");
+                    
+                    return `<li class="glass-panel-sm p-2">
+                        <span class="font-bold text-indigo-600 flex items-center">
+                            ${playerSymbolImg} ${w.name} (R${w.round}):
+                        </span>
+                        <span class="ml-8 text-gray-100 text-lg">${w.word}</span>
+                        
+                        <!-- NEW: Reactions container and button -->
+                        <div class="mt-2 flex items-center gap-2">
+                            <button data-word-index="${index}" class="react-button text-xs glass-button rounded-full px-3 py-1 glass-button-gray">
+                                React
+                            </button>
+                            <div class="flex gap-1 flex-wrap">
+                                ${reactionHTML}
+                            </div>
+                        </div>
+                    </li>`
+                }).join("");
+                gameWordList.scrollTop = gameWordList.scrollHeight;
+                
+                // Player List
+                gamePlayerList.innerHTML = Object.values(gameData.players).map(p => 
+                    `<li class="p-2 rounded-lg flex items-center ${p.isAlive ? 'glass-panel-sm' : 'glass-inset text-gray-500 line-through'}">
+                        <img src="${getEmojiUrl(p.symbol)}" alt="icon" class="w-5 h-5 mr-2"> ${p.name}
+                        ${p.isAlive ? '' : ' (Eliminated)'}
+                    </li>`
+                ).join("");
+                
+                // Game Log
+                gameLog.innerHTML = gameData.log.slice().reverse().map(entry => 
+                    `<li class="text-xs text-gray-400">${entry}</li>` 
+                ).join("");
+            }
+            
+            // --- Modals (NOW 3D) ---
+            
+            // Voting Modal
+            const yOffset = 8; // From init
+            if (gameData.state === "voting" && amIAlive && myPlayerData.vote === null) {
+                votingPlayerButtons.innerHTML = Object.keys(gameData.players)
+                    .filter(id => gameData.players[id].isAlive) 
+                    .map(id => {
+                        const player = gameData.players[id];
+                        const isMe = id === currentUserId;
+                        const playerSymbolHex = player.symbol;
+                        const playerSymbolImg = playerSymbolHex ? `<img src="${getEmojiUrl(playerSymbolHex)}" alt="icon" class="w-5 h-5 mr-2">` : "❔";
+                        
+                        return `<button data-vote-id="${id}" class="vote-button w-full p-3 rounded-lg glass-button ${isMe ? 'glass-button-gray opacity-50 cursor-not-allowed' : 'glass-button-red'} flex items-center justify-center">
+                            Vote ${playerSymbolImg} ${player.name} ${isMe ? '(You)' : ''}
+                        </button>`;
+                    }).join("");
+                votingModalObject.position.y = yOffset;
+            } else {
+                if (votingModalObject) votingModalObject.position.y = OFF_SCREEN_POS;
+            }
+            
+            // Game Over Modal
+            if (gameData.state === "game_over") {
+                isRoleVisible = false; 
+                gameOverWinner.textContent = `${gameData.winner} Win!`;
+                gameOverSecretWord.textContent = `Word: ${gameData.secretWord} (Theme: ${gameData.theme})`;
+                
+                const infiltradoNames = Object.values(gameData.players)
+                    .filter(p => p.role === "Infiltrado")
+                    .map(p => `<span class="inline-flex items-center justify-center mx-1"><img src="${getEmojiUrl(p.symbol)}" alt="icon" class="w-5 h-5 mr-1"> ${p.name}</span>`) 
+                    .join(", ");
+                gameOverInfiltrados.innerHTML = `Infiltrados: ${infiltradoNames}`;
+                
+                playAgainButton.classList.toggle("hidden", !isHost);
+                gameOverModalObject.position.y = yOffset;
+            } else {
+                if (gameOverModalObject) gameOverModalObject.position.y = OFF_SCREEN_POS;
+            }
+        }
+
+        // --- NEW: 3D Scene Update Function ---
+        function update3DScene(gameData) {
+            if (!playerFiguresGroup) return;
+
+            const players = gameData.players;
+            const playerIds = Object.keys(players);
+            const numPlayers = playerIds.length;
+            const spacing = 18 / (numPlayers + 1); // Spacing for figures
+
+            // 1. Add/Update figures
+            playerIds.forEach((id, index) => {
+                const player = players[id];
+                let figure = playerFigures.get(id);
+
+                if (!figure) {
+                    // Create new figure
+                    const color = PLAYER_COLORS[index % PLAYER_COLORS.length];
+                    const geometry = new THREE.CylinderGeometry(0.5, 0.5, 1.5, 16);
+                    const material = new THREE.MeshPhongMaterial({ color: color });
+                    figure = new THREE.Mesh(geometry, material);
+                    
+                    const headGeometry = new THREE.SphereGeometry(0.4, 16, 16);
+                    const headMaterial = new THREE.MeshPhongMaterial({ color: color });
+                    const head = new THREE.Mesh(headGeometry, headMaterial);
+                    head.position.y = 1.1;
+                    figure.add(head);
+
+                    playerFiguresGroup.add(figure);
+                    playerFigures.set(id, figure);
+                }
+                
+                // Update position
+                figure.position.x = (index * spacing) - (spacing * (numPlayers - 1) / 2);
+                
+                // Update material
+                const figureMaterial = figure.material;
+                const headMaterial = figure.children[0].material;
+
+                if (!player.isAlive) {
+                    figureMaterial.color.setHex(ELIMINATED_COLOR);
+                    headMaterial.color.setHex(ELIMINATED_COLOR);
+                } else if (gameData.turn === id) {
+                    figureMaterial.color.setHex(TURN_COLOR);
+                    headMaterial.color.setHex(TURN_COLOR);
+                } else {
+                    const baseColor = PLAYER_COLORS[index % PLAYER_COLORS.length];
+                    figureMaterial.color.setHex(baseColor);
+                    headMaterial.color.setHex(baseColor);
+                }
+            });
+
+            // 2. Remove figures for players who left
+            playerFigures.forEach((figure, id) => {
+                if (!players[id]) {
+                    playerFiguresGroup.remove(figure);
+                    playerFigures.delete(id);
+                }
+            });
+        }
+        
+        // --- Helper Functions ---
+        
+        function findNextAlivePlayer(startPlayerId, forceSameRound = false, roundStartPlayerId = null) {
+            const playerIds = Object.keys(localGameData.players);
+            const alivePlayerIds = playerIds.filter(id => localGameData.players[id].isAlive);
+            
+            alivePlayerIds.sort();
+            
+            if (forceSameRound && roundStartPlayerId) {
+                const roundStartIndex = alivePlayerIds.indexOf(roundStartPlayerId);
+                if (roundStartIndex !== -1) {
+                    return alivePlayerIds[roundStartIndex];
+                }
+            }
+
+            const startIndex = alivePlayerIds.indexOf(startPlayerId);
+            
+            if (startIndex === -1) {
+                return alivePlayerIds[0] || null;
+            }
+            
+            const nextIndex = (startIndex + 1) % alivePlayerIds.length;
+            return alivePlayerIds[nextIndex];
+        }
+
+        // --- Event Listeners ---
+        window.addEventListener("load", () => {
+            // --- NEW: Grab all DOM elements ---
+            loginSection = $("#login-section");
+            lobbySection = $("#lobby-section");
+            gameSection = $("#game-section");
+            usernameInput = $("#username-input");
+            setUsernameButton = $("#set-username-button");
+            loginError = $("#login-error");
+            createGameButton = $("#create-game-button");
+            joinGameButton = $("#join-game-button");
+            gameIdInput = $("#game-id-input");
+            lobbyGameIdDisplay = $("#lobby-game-id");
+            lobbyPlayerList = $("#lobby-player-list");
+            startGameButton = $("#start-game-button");
+            totalPlayersSelect = $("#total-players-select");
+            infiltradosSelect = $("#infiltrados-select");
+            roundsBeforeVoteSelect = $("#rounds-before-vote-select");
+            customWordContainer = $("#custom-word-container");
+            customWordInput = $("#custom-word-input");
+            customThemeInput = $("#custom-theme-input");
+            setCustomWordButton = $("#set-custom-word-button");
+            clearCustomWordButton = $("#clear-custom-word-button");
+            gameInfoRole = $("#game-info-role");
+            gameInfoWord = $("#game-info-word");
+            revealRoleButton = $("#reveal-role-button");
+            gameStatus = $("#game-status");
+            gameWordList = $("#game-word-list");
+            gamePlayerList = $("#game-player-list");
+            gameLog = $("#game-log");
+            wordInputContainer = $("#word-input-container");
+            wordInput = $("#word-input");
+            submitWordButton = $("#submit-word-button");
+            gameIdDisplay = $("#game-id-display");
+            gameThemeDisplay = $("#game-theme-display");
+            votingModal = $("#voting-modal");
+            votingPlayerButtons = $("#voting-player-buttons");
+            gameOverModal = $("#game-over-modal");
+            gameOverWinner = $("#game-over-winner");
+            gameOverSecretWord = $("#game-over-secret-word");
+            gameOverInfiltrados = $("#game-over-infiltrados");
+            leaveGameButton = $("#leave-game-button");
+            playAgainButton = $("#play-again-button");
+            reactModal = $("#react-modal");
+            reactEmojiButtons = $("#react-emoji-buttons");
+            // --- End Grab ---
+
+            // NEW: Add 3D listeners
+            window.addEventListener('resize', onWindowResize, false);
+            document.addEventListener('mousemove', onDocumentMouseMove, false);
+
+            // NEW: Init 3D Scene *first*
+            // This will create the CSS3DObjects, which showSection() needs
+            initThreeJs();
+            
+            // Login
+            setUsernameButton.addEventListener("click", handleUsername);
+            usernameInput.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") handleUsername();
+            });
+
+            // Lobby
+            createGameButton.addEventListener("click", createGame);
+            joinGameButton.addEventListener("click", joinGame);
+            startGameButton.addEventListener("click", startGame);
+
+            // Game
+            submitWordButton.addEventListener("click", submitWord);
+            wordInput.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") submitWord();
+            });
+            
+            // Vote Modal (Event delegation)
+            votingPlayerButtons.addEventListener("click", (e) => {
+                const button = e.target.closest(".vote-button");
+                if (button && button.dataset.voteId) {
+                    if (button.dataset.voteId === currentUserId) return; 
+                    submitVote(button.dataset.voteId);
+                }
+            });
+            
+            // Game Over
+            leaveGameButton.addEventListener("click", leaveGame); // In game over modal
+            $("#leave-game-button-main").addEventListener("click", leaveGame); // Main game header
+            playAgainButton.addEventListener("click", playAgain);
+
+            // Custom Word (Lobby)
+            setCustomWordButton.addEventListener("click", async () => {
+                if (!isHost || !currentGameId || localGameData.state !== 'lobby') return;
+                const word = customWordInput.value.trim();
+                const theme = customThemeInput.value.trim(); 
+                if (word.length < 2 || word.includes(" ")) {
+                    showError("Custom word must be a single word, min 2 chars.");
+                    return;
+                }
+                try {
+                    const gameRef = getGameDocRef(currentGameId);
+                    await updateDoc(gameRef, { customWord: word, customTheme: theme }); 
+                    localGameData.customWord = word; 
+                    localGameData.customTheme = theme; 
+                } catch (error) {
+                    console.error("Error setting custom word:", error);
+                }
+            });
+            
+            clearCustomWordButton.addEventListener("click", async () => {
+                if (!isHost || !currentGameId || localGameData.state !== 'lobby') return;
+                try {
+                    const gameRef = getGameDocRef(currentGameId);
+                    await updateDoc(gameRef, { customWord: "", customTheme: "" }); 
+                    localGameData.customWord = ""; 
+                    localGameData.customTheme = ""; 
+                    customWordInput.value = "";
+                    customThemeInput.value = ""; 
+                } catch (error) {
+                    console.error("Error clearing custom word:", error);
+                }
+            });
+            
+            // Reveal Role
+            revealRoleButton.addEventListener("click", () => {
+                isRoleVisible = !isRoleVisible; 
+                updateRoleVisibility(); 
+            });
+
+            // Host settings change
+            document.querySelectorAll(".host-setting").forEach(el => {
+                el.addEventListener("change", async (e) => {
+                    if (isHost && currentGameId && localGameData.state === 'lobby') {
+                        const key = e.target.dataset.setting;
+                        const value = parseInt(e.target.value);
+                        try {
+                            const gameRef = getGameDocRef(currentGameId); 
+                            await updateDoc(gameRef, {
+                                [`settings.${key}`]: value
+                            });
+                        } catch (error) {
+                            console.error("Error updating setting:", error);
+                        }
+                    }
+                });
+            });
+
+            // --- NEW: Emoji React Listeners ---
+            gameWordList.addEventListener("click", (e) => {
+                const button = e.target.closest(".react-button");
+                if (button && button.dataset.wordIndex) {
+                    currentWordIndexToReact = parseInt(button.dataset.wordIndex, 10);
+                    // Populate and show modal
+                    reactEmojiButtons.innerHTML = EMOJI_REACTIONS.map(hex => `
+                        <button data-emoji-hex="${hex}" class="react-emoji-button p-3 glass-button rounded-lg text-2xl">
+                            <img src="${getEmojiUrl(hex)}" class="w-8 h-8">
+                        </button>
+                    `).join("");
+                    reactModalObject.position.y = 8; // Show modal
+                }
+            });
+            
+            reactEmojiButtons.addEventListener("click", (e) => {
+                 const button = e.target.closest(".react-emoji-button");
+                 if (button && button.dataset.emojiHex) {
+                     submitReaction(button.dataset.emojiHex);
+                 }
+            });
+
+            $("#react-modal-close").addEventListener("click", () => {
+                reactModalObject.position.y = OFF_SCREEN_POS;
+                currentWordIndexToReact = null;
+            });
+
+        }); // End window.onload
+
+    </script>
+</head>
+<body class="h-full font-sans text-gray-300 bg-slate-900">
+
+    <!-- NEW: 3D Renderer Containers -->
+    <div id="webgl-container"></div>
+    <div id="css-container"></div>
+
+    <!-- 
+      All UI sections are below.
+      They will be grabbed by JS and moved into the CSS3DRenderer.
+      The 'hidden' class is removed, their 3D position controls visibility.
+    -->
+
+    <!-- Login Section -->
+    <section id="login-section" class="p-4" style="width: 448px;"> <!-- max-w-sm is 384px + p-8*2 = 448px -->
+        <div class="glass-panel p-8 rounded-2xl w-full">
+            <h1 class="text-3xl font-bold text-center mb-6">Welcome to Infiltrados</h1>
+            <div class="space-y-4">
+                <label for="username-input" class="block text-sm font-medium">Enter your name:</label>
+                <div class="glass-inset p-3">
+                    <input type="text" id="username-input" class="w-full glass-input" placeholder="e.g., Player1">
+                </div>
+                <button id="set-username-button" class="w-full p-3 rounded-lg glass-button glass-button-blue">
+                    Join
+                </button>
+                <p id="login-error" class="text-red-600 text-sm text-center h-4"></p>
+            </div>
+            <p class="text-xs text-gray-500 text-center mt-6">v1.3.0</p>
+        </div>
+    </section>
+
+    <!-- Lobby Section -->
+    <section id="lobby-section" class="p-8" style="width: 896px;"> <!-- max-w-4xl is 896px -->
+        <div class="max-w-4xl mx-auto">
+            <h1 class="text-3xl font-bold text-center mb-6">Game Lobby</h1>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <!-- Create Game -->
+                <div class="glass-panel p-6 rounded-2xl">
+                    <h2 class="text-xl font-semibold mb-4">Create New Game</h2>
+                    <div class="space-y-3 mb-4">
+                        <div>
+                            <label for="total-players-select" class="block text-sm font-medium">Total Players</label>
+                            <select id="total-players-select" data-setting="totalPlayers" class="host-setting w-full p-2 glass-select mt-1">
+                                <option>3</option>
+                                <option>4</option>
+                                <option>5</option>
+                                <option>6</option>
+                                <option>7</option>
+                                <option selected>8</option>
+                                <option>9</option>
+                                <option>10</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="infiltrados-select" class="block text-sm font-medium">Infiltrados</label>
+                            <select id="infiltrados-select" data-setting="infiltradosCount" class="host-setting w-full p-2 glass-select mt-1">
+                                <option>1</option>
+                                <option selected>2</option>
+                                <option>3</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="rounds-before-vote-select" class="block text-sm font-medium">Rounds Before Vote</label>
+                            <select id="rounds-before-vote-select" data-setting="roundsBeforeVote" class="host-setting w-full p-2 glass-select mt-1">
+                                <option>1</option>
+                                <option selected>2</option>
+                                <option>3</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button id="create-game-button" class="w-full p-3 rounded-lg glass-button glass-button-blue">
+                        Create Game
+                    </button>
+                </div>
+                
+                <!-- Join Game -->
+                <div class="glass-panel p-6 rounded-2xl">
+                    <h2 class="text-xl font-semibold mb-4">Join Game</h2>
+                    <label for="game-id-input" class="block text-sm font-medium">Enter Game ID:</label>
+                    <div class="glass-inset p-3 mt-1">
+                        <input type="text" id="game-id-input" class="w-full glass-input uppercase" placeholder="ABCXYZ">
+                    </div>
+                    <button id="join-game-button" class="w-full p-3 mt-4 rounded-lg glass-button glass-button-green">
+                        Join Game
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Current Lobby -->
+            <div class="glass-panel p-6 rounded-2xl">
+                <h2 class="text-2xl font-semibold mb-4">Waiting Room</h2>
+                <h3 id="lobby-game-id" class="text-xl font-mono mb-4"></h3>
+
+                <div id="custom-word-container" class="hidden mb-4 p-4 glass-inset rounded-lg space-y-2">
+                    <div>
+                        <label for="custom-word-input" class="block text-sm font-medium">Custom Secret Word (Host Only)</label>
+                        <div class="glass-inset p-2">
+                            <input type="text" id="custom-word-input" class="w-full glass-input" placeholder="Leave blank for random">
+                        </div>
+                    </div>
+                    <div>
+                        <label for="custom-theme-input" class="block text-sm font-medium">Theme (Optional)</label>
+                        <div class="glass-inset p-2">
+                            <input type="text" id="custom-theme-input" class="w-full glass-input" placeholder="e.g., Football Players">
+                        </div>
+                    </div>
+                    <div class="flex gap-2 pt-2">
+                        <button id="set-custom-word-button" class="p-2 glass-button rounded-lg glass-button-green">Set</button>
+                        <button id="clear-custom-word-button" class="p-2 glass-button rounded-lg glass-button-gray">Clear</button>
+                    </div>
+                </div>
+
+                <h4 class="text-lg mb-2">Players:</h4>
+                <ul id="lobby-player-list" class="space-y-2 mb-4">
+                    <!-- Player list injected by JS -->
+                </ul>
+                <button id="start-game-button" class="w-full p-3 rounded-lg glass-button glass-button-red hidden">
+                    Start Game (Host Only)
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Game Section -->
+    <section id="game-section" class="flex flex-col p-8" style="width: 1280px; height: 90vh;"> <!-- Wide for game layout -->
+        <div class="flex-shrink-0 mb-4">
+            <!-- Top Bar -->
+            <div class="glass-panel flex justify-between items-center p-4 rounded-2xl">
+                <div>
+                    <h1 class="text-2xl font-bold">Infiltrados</h1>
+                    <div id="game-id-display" class="text-sm font-mono"></div>
+                    <div id="game-theme-display" class="text-md font-semibold"></div> 
+                </div>
+                <div class="text-right">
+                    <div id="game-info-role" class="text-lg font-bold">Your Role: [Hidden]</div>
+                    <div id="game-info-word" class="text-sm hidden"></div>
+                    <button id="reveal-role-button" class="mt-1 p-2 glass-button rounded-lg text-sm glass-button-blue">
+                        Show Role
+                    </button>
+                </div>
+                <button id="leave-game-button-main" class="p-2 glass-button rounded-lg text-sm glass-button-gray">Leave Game</button>
+            </div>
+            <!-- Status Bar -->
+            <div id="game-status" class="text-center text-xl font-semibold p-4">
+                Loading game...
+            </div>
+        </div>
+
+        <!-- Main Game Area -->
+        <div class="flex-grow grid grid-cols-1 lg:grid-cols-4 gap-6 min-h-0">
+            
+            <!-- Players -->
+            <div class="glass-panel p-4 rounded-2xl">
+                <h3 class="text-lg font-semibold mb-3 border-b pb-2">Players</h3>
+                <ul id="game-player-list" class="space-y-2">
+                    <!-- Player list injected by JS -->
+                </ul>
+            </div>
+            
+            <!-- Words -->
+            <div class="glass-panel p-4 rounded-2xl lg:col-span-2 flex flex-col">
+                <h3 class="text-lg font-semibold mb-3 border-b pb-2">Word List</h3>
+                <ul id="game-word-list" class="flex-grow space-y-2 overflow-y-auto h-64 md:h-auto p-1">
+                    <!-- Word list injected by JS -->
+                </ul>
+                <!-- Word Input -->
+                <div id="word-input-container" class="mt-4 flex gap-2 hidden">
+                    <div class="flex-grow p-3 glass-inset">
+                        <input type="text" id="word-input" class="flex-grow glass-input" placeholder="Your word...">
+                    </div>
+                    <button id="submit-word-button" class="p-3 rounded-lg glass-button glass-button-blue">
+                        Submit
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Log -->
+            <div class="glass-panel p-4 rounded-2xl">
+                <h3 class="text-lg font-semibold mb-3 border-b pb-2">Game Log</h3>
+                <ul id="game-log" class="space-y-1 overflow-y-auto h-64 md:h-auto max-h-72">
+                    <!-- Log entries injected by JS -->
+                </ul>
+            </div>
+            
+        </div>
+    </section>
+    
+    <!-- Voting Modal -->
+    <div id="voting-modal" class="p-4" style="width: 448px;">
+        <div class="glass-panel p-8 rounded-2xl shadow-xl w-full max-w-md">
+            <h2 class="text-3xl font-bold text-center mb-6">Vote to Eliminate!</h2>
+            <div id="voting-player-buttons" class="space-y-3">
+                <!-- Voting buttons injected by JS -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- Game Over Modal -->
+    <div id="game-over-modal" class="p-4" style="width: 448px;">
+        <div class="glass-panel p-8 rounded-2xl shadow-xl w-full max-w-md text-center">
+            <h2 id="game-over-winner" class="text-4xl font-bold mb-4"></h2>
+            <p id="game-over-secret-word" class="text-xl mb-2"></p>
+            <p id="game-over-infiltrados" class="text-lg text-red-600 mb-8"></p>
+            
+            <button id="play-again-button" class="w-full p-3 mb-3 rounded-lg glass-button glass-button-blue hidden">
+                Play Again (Host)
+            </button>
+            <button id="leave-game-button" class="w-full p-3 mb-3 rounded-lg glass-button glass-button-gray">
+                Leave to Lobby
+            </button>
+            <p class="text-sm">Wait for the host to start a new game.</p>
+        </div>
+    </div>
+
+    <!-- NEW: React Modal -->
+    <div id="react-modal" class="p-4" style="width: 448px;">
+        <div class="glass-panel p-6 rounded-2xl shadow-xl w-full max-w-md">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold">React to Word</h3>
+                <button id="react-modal-close" class="glass-button rounded-full w-8 h-8 flex items-center justify-center">X</button>
+            </div>
+            <div id="react-emoji-buttons" class="flex justify-center gap-2">
+                <!-- Emoji buttons injected by JS -->
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
