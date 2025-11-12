@@ -226,6 +226,10 @@
             gameOverInfiltrados, leaveGameButton, playAgainButton,
             reactModal, reactEmojiButtons;
             
+        // --- NEW: Re-added helper functions ---
+        const $ = (selector) => document.querySelector(selector);
+        const $$ = (selector) => document.querySelectorAll(selector);
+
         // --- Helper function for correct Firestore path ---
         function getGameDocRef(gameId) {
             return doc(db, "artifacts", appId, "public", "data", "games", gameId);
@@ -1458,12 +1462,12 @@
                     Join
                 </button>
                 <p id="login-error" class="text-red-600 text-sm text-center h-4"></p>
-            </div>
-            <p class="text-xs text-gray-500 text-center mt-6">v1.3.0</p>
         </div>
-    </section>
+        <p class="text-xs text-gray-500 text-center mt-6">v1.3.1</p>
+    </div>
+</section>
 
-    <!-- Lobby Section -->
+<!-- Lobby Section -->
     <section id="lobby-section" class="p-8" style="width: 896px;"> <!-- max-w-4xl is 896px -->
         <div class="max-w-4xl mx-auto">
             <h1 class="text-3xl font-bold text-center mb-6">Game Lobby</h1>
