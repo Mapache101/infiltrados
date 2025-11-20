@@ -4,49 +4,32 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Infiltrados Online 3D</title>
-    <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- NEW: Load Three.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <!-- NEW: Optional: OrbitControls for camera movement (for testing) -->
-    <!-- <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script> -->
 
-    <!-- NEW: Custom styles for Neumorphism (Light) + 3D Background -->
     <style>
         :root {
-            /* NEW: Added alpha transparency (c0 = 75%) to the background */
             --neu-bg: #e0e5ecc0; 
             --neu-shadow-light: #ffffff;
             --neu-shadow-dark: #babecc;
         }
 
-        /* NEW: Set a default background for the html element */
-        html {
-            background-color: #334155; /* slate-700 fallback */
-        }
-        
-        body {
-            /* NEW: Body background is transparent to see the canvas */
-            background-color: transparent;
-        }
+        html { background-color: #334155; }
+        body { background-color: transparent; }
 
-        /* NEW: 3D Canvas styles */
+        /* 3D Canvas styles */
         #bg-canvas {
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            /* CRITICAL: Sits behind all other content */
             z-index: -1; 
         }
 
-        /* NEW: Frosted glass effect for UI panels */
+        /* Frosted glass effect for UI panels */
         .neu-outset, .neu-outset-sm, .neu-inset {
-            /* These properties create the "frosted glass" effect
-              letting the 3D scene show through blurred.
-            */
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
         }
@@ -70,36 +53,32 @@
             background: transparent;
             border: none;
         }
-        .neu-input::placeholder {
-            color: #9ca3af; /* text-gray-400 */
-        }
-        .neu-input:focus {
-            outline: none;
-        }
+        .neu-input::placeholder { color: #9ca3af; }
+        .neu-input:focus { outline: none; }
+        
         .neu-button {
             background: var(--neu-bg);
             border: none;
-            color: #374151; /* text-gray-700 */
+            color: #374151;
             font-weight: 600;
             transition: box-shadow 0.1s ease-in-out;
+            cursor: pointer;
         }
         .neu-button:active, .neu-button-pressed {
             box-shadow: inset 3px 3px 5px var(--neu-shadow-dark), inset -3px -3px 5px var(--neu-shadow-light) !important;
-            color: #4f46e5; /* indigo-600 */
+            color: #4f46e5;
         }
-        .neu-button-red { color: #dc2626; /* red-600 */ }
-        .neu-button-red:active, .neu-button-red.neu-button-pressed { color: #b91c1c; /* red-700 */ }
-        .neu-button-green { color: #16a34a; /* green-600 */ }
-        .neu-button-green:active, .neu-button-green.neu-button-pressed { color: #15803d; /* green-700 */ }
-        .neu-button-blue { color: #2563eb; /* blue-600 */ }
-        .neu-button-blue:active, .neu-button-blue.neu-button-pressed { color: #1d4ed8; /* blue-700 */ }
-        .neu-button-gray { color: #6b7280; /* gray-500 */ }
-        .neu-button-gray:active, .neu-button-gray.neu-button-pressed { color: #4b5563; /* gray-600 */ }
+        .neu-button-red { color: #dc2626; }
+        .neu-button-red:active { color: #b91c1c; }
+        .neu-button-green { color: #16a34a; }
+        .neu-button-green:active { color: #15803d; }
+        .neu-button-blue { color: #2563eb; }
+        .neu-button-blue:active { color: #1d4ed8; }
+        .neu-button-gray { color: #6b7280; }
         
         .neu-select {
             background: var(--neu-bg);
             border: none;
-            /* Fix for arrow */
             background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
             background-position: right 0.5rem center;
             background-repeat: no-repeat;
@@ -109,8 +88,12 @@
             appearance: none;
             padding-right: 2.5rem;
         }
+        
+        /* Emoji Scaling */
+        .emoji-icon { font-size: 1.25rem; line-height: 1.25rem; }
+        .emoji-lg { font-size: 1.5rem; line-height: 1.5rem; }
+        .emoji-xl { font-size: 2rem; line-height: 2rem; }
     </style>
-    <!-- Load Firebase JS SDKs -->
     <script type="module">
         // --- Firebase Imports ---
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -136,14 +119,13 @@
         let currentUserId = null;
         let currentUsername = "Player";
         let currentGameId = null;
-        let gameUnsubscribe = null; // To stop listening to game updates
-        let localGameData = {}; // Local cache of game state
+        let gameUnsubscribe = null;
+        let localGameData = {}; 
         let isHost = false;
         let isRoleVisible = false; 
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'infiltrados-game';
 
         // --- DOM Elements ---
-        // NEW: Declare variables here, but assign them inside 'load' listener
         let $, $$;
         let loginSection, lobbySection, gameSection;
         let usernameInput, setUsernameButton, loginError;
@@ -154,46 +136,52 @@
         let wordInputContainer, wordInput, submitWordButton, gameIdDisplay, gameThemeDisplay;
         let votingModal, votingPlayerButtons, gameOverModal, gameOverWinner, gameOverSecretWord, gameOverInfiltrados;
         let leaveGameButton, playAgainButton;
-        // NEW: Reaction Modal Elements
         let reactModal, reactEmojiList, closeReactModal;
-        let reactingToWordIndex = null; // State to track which word is being reacted to
+        let reactingToWordIndex = null;
 
-        // --- Secret Word List ---
+        // --- Secret Word List (Expanded) ---
         const SECRET_WORDS = [
+            // Locations
             "Hospital", "School", "Restaurant", "Airport", "Museum", "Beach",
             "Mountain", "Forest", "Office", "Supermarket", "Pharmacy", "Library",
             "Park", "Zoo", "Aquarium", "Cinema", "Theater", "Gym", "Stadium",
-            "Farm", "Factory", "Police Station", "Fire Station", "Post Office"
+            "Farm", "Factory", "Police Station", "Fire Station", "Post Office",
+            "Hotel", "University", "Casino", "Church", "Graveyard", "Space Station",
+            // Objects
+            "Computer", "Phone", "Car", "Bicycle", "Guitar", "Piano", "Camera",
+            "Television", "Clock", "Umbrella", "Backpack", "Shoe", "Chair", "Table",
+            "Refrigerator", "Microwave", "Toaster", "Mirror", "Window", "Door",
+            // Animals
+            "Lion", "Tiger", "Elephant", "Giraffe", "Monkey", "Dog", "Cat", "Rabbit",
+            "Snake", "Eagle", "Shark", "Whale", "Dolphin", "Penguin", "Kangaroo",
+            // Food
+            "Pizza", "Burger", "Sushi", "Pasta", "Ice Cream", "Chocolate", "Apple",
+            "Banana", "Coffee", "Tea", "Bread", "Cheese", "Cake", "Sandwich",
+            // Professions
+            "Doctor", "Teacher", "Engineer", "Pilot", "Chef", "Artist", "Writer",
+            "Actor", "Musician", "Police Officer", "Firefighter", "Scientist"
         ];
         
-        // NEW: Emojis for reactions (using OpenMoji Hex Codes)
-        const REACTION_EMOJIS = ["1F602", "1F60D", "1F914", "1F4A9", "1F525", "2753"]; // 😂, 😍, 🤔, 💩, 🔥, ❓
+        // --- Emojis (Native Unicode) ---
+        // Fixed: Using native emojis ensures they display without broken image links
+        const REACTION_EMOJIS = ["😂", "😍", "🤔", "💩", "🔥", "❓", "👍", "👎"]; 
+        const PLAYER_SYMBOLS = [
+            "👑", "🚀", "⭐", "🤖", "🦊", "🦄", "🍕", "⚽", 
+            "🎨", "🎸", "💡", "📚", "🧥", "🧪", "🔑", "🛡️", 
+            "👾", "🎃", "👽", "💎", "🧨", "🧸", "🎈", "🧊"
+        ];
 
-        // NEW: Updated to use OpenMoji Hex Codes
-        const PLAYER_SYMBOLS = ["1F451", "1F680", "2B50", "1F916", "1F98A", "1F984", "1F355", "26BD", "1F3A8", "1F3B8", "1F4A1", "1F4DA", "1F9ED", "1F9EA", "1F511", "1F6E1"];
-
-        // --- NEW: Three.js State ---
+        // --- Three.js State ---
         let scene, camera, renderer, tableMesh, playerFiguresGroup, skyMesh;
-        // Simple color array for player figures
         const PLAYER_COLORS = [
             0xf94144, 0xf3722c, 0xf8961e, 0xf9c74f, 0x90be6d, 
             0x43aa8b, 0x577590, 0x277da1, 0x6a00f4, 0xc71fcd
         ];
         const ELIMINATED_COLOR = 0x666666;
-        const TURN_COLOR = 0xffffff; // Bright white for the current turn
+        const TURN_COLOR = 0xffffff; 
 
-        // --- Helper function for correct Firestore path ---
         function getGameDocRef(gameId) {
             return doc(db, "artifacts", appId, "public", "data", "games", gameId);
-        }
-
-        // NEW: Helper function for OpenMoji URLs
-        function getEmojiUrl(hexCode) {
-            // Using 72x72 PNGs from OpenMoji CDN
-            // OLD URL: return `https://cdn.jsdelivr.net/gh/openmoji/openmoji/color/72x72/${hexCode}.png`;
-            
-            // NEW URL: Using unpkg, which is very stable for this.
-            return `https://unpkg.com/openmoji/color/72x72/${hexCode}.png`;
         }
 
         // --- Firebase Initialization ---
@@ -220,15 +208,11 @@
                 auth = getAuth(app);
                 setLogLevel('debug'); 
 
-                // --- Auth Handling ---
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         currentUserId = user.uid;
-                        console.log("User signed in:", currentUserId);
                         loginSection.classList.add("hidden");
                         lobbySection.classList.remove("hidden");
-                        
-                        // NEW: Update 3D scene on auth
                         updateThreeScene(localGameData); 
                     } else {
                         try {
@@ -257,7 +241,6 @@
             if (section === "lobby") lobbySection.classList.remove("hidden");
             if (section === "game") gameSection.classList.remove("hidden");
 
-            // NEW: Update 3D scene on section change
             if(localGameData) {
                 updateThreeScene(localGameData, section);
             }
@@ -265,93 +248,62 @@
 
         function showError(message) {
             console.error("ERROR:", message);
-            // Show error in the game status bar if it exists
             if (gameStatus) {
                 gameStatus.textContent = `Error: ${message}`;
                 gameStatus.classList.add("text-red-600");
             }
         }
 
-        // --- NEW: Three.js Setup ---
+        // --- Three.js Setup ---
         function initThree() {
             const canvas = document.getElementById('bg-canvas');
-            
-            // 1. Scene
             scene = new THREE.Scene();
-
-            // 2. Camera
-            // Mimic the perspective from the guide image
             camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(0, 1.5, 5); // Positioned as a player
-            camera.rotation.set(-0.2, 0, 0); // Looking slightly down
+            camera.position.set(0, 1.5, 5); 
+            camera.rotation.set(-0.2, 0, 0); 
 
-            // 3. Renderer
-            renderer = new THREE.WebGLRenderer({ 
-                canvas: canvas, 
-                antialias: true, 
-                alpha: true // Make canvas transparent
-            });
+            renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setClearColor(0x000000, 0); // Transparent clear color
+            renderer.setClearColor(0x000000, 0); 
 
-            // 4. Lighting
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
             scene.add(ambientLight);
             const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
             directionalLight.position.set(5, 10, 7.5);
             scene.add(directionalLight);
 
-            // 5. Create "Table"
             const tableGeometry = new THREE.PlaneGeometry(20, 15);
-            const tableMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0x334155, // slate-700
-                shininess: 20
-            });
+            const tableMaterial = new THREE.MeshPhongMaterial({ color: 0x334155, shininess: 20 });
             tableMesh = new THREE.Mesh(tableGeometry, tableMaterial);
-            tableMesh.rotation.x = -Math.PI / 2; // Lay it flat
+            tableMesh.rotation.x = -Math.PI / 2; 
             tableMesh.position.y = 0;
             scene.add(tableMesh);
 
-            // 6. Create Stylized Environment (Low-Poly Mountains)
-            const mountainMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0x475569, // slate-600
-                flatShading: true 
-            });
+            const mountainMaterial = new THREE.MeshPhongMaterial({ color: 0x475569, flatShading: true });
             const mountainGroup = new THREE.Group();
             for (let i = 0; i < 20; i++) {
                 const height = Math.random() * 5 + 2;
                 const radius = Math.random() * 1.5 + 0.5;
                 const mountainGeom = new THREE.ConeGeometry(radius, height, 6);
                 const mountain = new THREE.Mesh(mountainGeom, mountainMaterial);
-                
-                mountain.position.set(
-                    (Math.random() - 0.5) * 40, // Spread them out
-                    height / 2, // Base on the "ground" (table)
-                    (Math.random() * -15) - 10 // Far distance
-                );
+                mountain.position.set((Math.random() - 0.5) * 40, height / 2, (Math.random() * -15) - 10);
                 mountainGroup.add(mountain);
             }
             scene.add(mountainGroup);
 
-            // 7. Create Sky
             const skyGeometry = new THREE.PlaneGeometry(100, 100);
-            const skyMaterial = new THREE.MeshBasicMaterial({ color: 0x1e293b }); // slate-800
+            const skyMaterial = new THREE.MeshBasicMaterial({ color: 0x1e293b }); 
             skyMesh = new THREE.Mesh(skyGeometry, skyMaterial);
             skyMesh.position.z = -25;
             skyMesh.position.y = 10;
             scene.add(skyMesh);
 
-
-            // 8. Player Figures Group
             playerFiguresGroup = new THREE.Group();
-            playerFiguresGroup.position.y = 0.25; // Sit on the table
-            playerFiguresGroup.position.z = -3; // At the "far end"
+            playerFiguresGroup.position.y = 0.25; 
+            playerFiguresGroup.position.z = -3; 
             scene.add(playerFiguresGroup);
 
-            // 9. Resize Listener
             window.addEventListener('resize', onWindowResize, false);
-
-            // 10. Start Animation Loop
             animate();
         }
 
@@ -363,36 +315,25 @@
 
         function animate() {
             requestAnimationFrame(animate);
-            
-            // Simple breathing animation for player figures
             if (playerFiguresGroup) {
                 playerFiguresGroup.children.forEach((figure, index) => {
                     figure.position.y = 0.25 + Math.sin(Date.now() * 0.002 + index) * 0.05;
                 });
             }
-
             renderer.render(scene, camera);
         }
 
-        /**
-         * NEW: Updates the 3D scene based on game data.
-         * @param {object} gameData - The localGameData object.
-         * @param {string} [section] - The name of the currently visible section ('login', 'lobby', 'game').
-         */
         function updateThreeScene(gameData, section) {
-            if (!scene || !playerFiguresGroup) return; // Don't run if three.js isn't init
+            if (!scene || !playerFiguresGroup) return; 
 
             const currentSection = section || (loginSection.classList.contains('hidden') ? (lobbySection.classList.contains('hidden') ? 'game' : 'lobby') : 'login');
 
-            // Hide figures on login screen
             if (currentSection === 'login' || !gameData.players) {
                 playerFiguresGroup.visible = false;
                 return;
             }
 
             playerFiguresGroup.visible = true;
-
-            // Remove old figures
             while (playerFiguresGroup.children.length) {
                 playerFiguresGroup.remove(playerFiguresGroup.children[0]);
             }
@@ -401,44 +342,34 @@
             const numPlayers = players.length;
             const angleStep = Math.PI / 8 / (numPlayers - 1 || 1);
             const startAngle = (numPlayers > 1) ? -Math.PI / 16 : 0;
-            const radius = 3.5; // Arc radius
+            const radius = 3.5; 
 
             players.forEach((player, index) => {
                 const angle = startAngle + (index * angleStep);
                 const x = Math.sin(angle) * radius;
-                const z = (Math.cos(angle) * radius) - radius; // Pull arc back
+                const z = (Math.cos(angle) * radius) - radius; 
 
-                // Create the figure (a simple cylinder 'pawn')
                 const geometry = new THREE.CylinderGeometry(0.15, 0.2, 0.5, 12);
                 
                 let color = PLAYER_COLORS[index % PLAYER_COLORS.length];
                 let emissive = 0x000000;
 
                 if (gameData.state !== 'lobby') {
-                    // In-game logic
                     if (!player.isAlive) {
                         color = ELIMINATED_COLOR;
                     } else if (gameData.turn === Object.keys(gameData.players)[index]) {
-                        // This player's turn
                         color = TURN_COLOR;
-                        emissive = 0xeeee00; // Yellow glow
+                        emissive = 0xeeee00; 
                     } else if (gameData.state === 'voting' && player.vote === null) {
-                        // Player has not voted
                         color = PLAYER_COLORS[index % PLAYER_COLORS.length];
-                        emissive = 0x0000ff; // Blue glow
+                        emissive = 0x0000ff; 
                     }
                 }
                 
-                const material = new THREE.MeshPhongMaterial({ 
-                    color: color, 
-                    emissive: emissive,
-                    shininess: 30
-                });
-                
+                const material = new THREE.MeshPhongMaterial({ color: color, emissive: emissive, shininess: 30 });
                 const figure = new THREE.Mesh(geometry, material);
-                figure.position.set(x, 0, z); // y is 0 relative to the group
+                figure.position.set(x, 0, z); 
                 
-                // Add a simple "head"
                 const headGeom = new THREE.SphereGeometry(0.1, 12, 12);
                 const head = new THREE.Mesh(headGeom, material);
                 head.position.y = 0.35;
@@ -448,7 +379,7 @@
             });
         }
 
-        // --- Game Logic (Unchanged from user's code) ---
+        // --- Game Logic ---
 
         function handleUsername() {
             loginError.textContent = "";
@@ -506,7 +437,6 @@
             try {
                 const gameRef = getGameDocRef(gameId); 
                 await setDoc(gameRef, gameDoc);
-                console.log("Game created with ID:", gameId);
                 await subscribeToGame(gameId);
             } catch (error) {
                 console.error("Error creating game:", error);
@@ -533,30 +463,21 @@
                 return showError("Game has already started.");
             }
 
-            // REMOVED: Check for game full. Anyone can join a lobby.
-            // if (Object.keys(gameData.players).length >= gameData.settings.totalPlayers) {
-            //     return showError("Game is full.");
-            // }
-            
             if (gameData.players[currentUserId]) {
                 console.log("Rejoining lobby...");
             } else {
-                // NEW: Check if we need to update settings
                 const newPlayerCount = Object.keys(gameData.players).length + 1;
                 let settingsUpdate = {};
                 if (newPlayerCount > gameData.settings.totalPlayers) {
                     settingsUpdate['settings.totalPlayers'] = newPlayerCount;
-                    // Also, we must ensure infiltrados is not >= new player count
                     if (gameData.settings.infiltradosCount >= newPlayerCount) {
-                        // Set infiltrados to a safe number, e.g., new count - 1, or 1 if 2 players
                         settingsUpdate['settings.infiltradosCount'] = Math.max(1, newPlayerCount - 1); 
                     }
                 }
 
                 const existingSymbols = Object.values(gameData.players).map(p => p.symbol);
                 const availableSymbols = PLAYER_SYMBOLS.filter(s => !existingSymbols.includes(s));
-                // NEW: Use "2753" (Question Mark) as the hex fallback
-                const newSymbol = availableSymbols.length > 0 ? availableSymbols[0] : "2753"; 
+                const newSymbol = availableSymbols.length > 0 ? availableSymbols[0] : "❓"; 
 
                 const playerKey = `players.${currentUserId}`;
                 const newPlayer = {
@@ -571,9 +492,8 @@
                     await updateDoc(gameRef, { 
                         [playerKey]: newPlayer,
                         log: arrayUnion(`${currentUsername} joined the lobby.`),
-                        ...settingsUpdate // NEW: Add the settings update
+                        ...settingsUpdate
                     });
-                    console.log("Joined game:", gameId);
                 } catch (error) {
                     console.error("Error joining game:", error);
                     return showError("Could not join game.");
@@ -599,10 +519,9 @@
                 }
 
                 const gameData = docSnap.data();
-                localGameData = gameData; // Cache game data
+                localGameData = gameData; 
                 updateUI(gameData);
 
-                // --- Host-Only Logic ---
                 if (isHost) {
                     if (gameData.state === "voting" && didAllAlivePlayersVote(gameData)) {
                         tallyVotes(gameData);
@@ -633,7 +552,6 @@
             gameIdInput.value = "";
             customWordContainer.classList.add("hidden"); 
             
-            // NEW: Update 3D scene
             updateThreeScene({});
         }
 
@@ -645,38 +563,31 @@
 
             const isDebugMode = (currentUsername === "debug" || currentUsername === "admin");
 
-            // REMOVED: Check that player count matches setting.
-            // if (playerIds.length !== gameData.settings.totalPlayers && !isDebugMode) { 
-            //     return showError(`Waiting for ${gameData.settings.totalPlayers} players. Currently have ${playerIds.length}.`);
-            // }
-
-            // NEW: But we must check for minimum players
-            if (playerIds.length < 3 && !isDebugMode) { // A game needs at least 3 players
+            if (playerIds.length < 3 && !isDebugMode) {
                 return showError(`You need at least 3 players to start. Currently have ${playerIds.length}.`);
             }
 
-            // NEW: And we must validate the infiltrado count against the *actual* player count
             let infiltradosCount = gameData.settings.infiltradosCount;
             if (infiltradosCount >= playerIds.length) {
-                // Too many infiltrados for the number of players.
-                infiltradosCount = Math.max(1, playerIds.length - 2); // e.g., 3 players -> 1 infiltrado.
-                console.warn(`Infiltrado count was too high. Adjusted to ${infiltradosCount}.`);
-                // We could even update this in Firestore, but for now, just use it locally
+                infiltradosCount = Math.max(1, playerIds.length - 2);
             }
             
-            // --- Assign Roles ---
-            // const { infiltradosCount } = gameData.settings; // OLD
-            // Use the *validated* infiltradosCount
+            // --- Assign Roles (MODIFIED: Host is never Infiltrado) ---
             const newPlayers = { ...gameData.players };
-            const shuffledPlayerIds = playerIds.sort(() => 0.5 - Math.random());
-            
-            const infiltradoIds = [];
-            
-            for (let i = 0; i < shuffledPlayerIds.length; i++) {
-                const id = shuffledPlayerIds[i];
-                if (i < infiltradosCount) { // Use the validated count
+            const hostId = gameData.hostId;
+
+            // 1. Set Host as Regular
+            newPlayers[hostId].role = "Regular";
+
+            // 2. Get other players and shuffle them
+            const otherPlayerIds = playerIds.filter(id => id !== hostId);
+            const shuffledOtherIds = otherPlayerIds.sort(() => 0.5 - Math.random());
+
+            // 3. Assign Infiltrados from the shuffled pool
+            for (let i = 0; i < shuffledOtherIds.length; i++) {
+                const id = shuffledOtherIds[i];
+                if (i < infiltradosCount) {
                     newPlayers[id].role = "Infiltrado";
-                    infiltradoIds.push(newPlayers[id].name); 
                 } else {
                     newPlayers[id].role = "Regular";
                 }
@@ -686,20 +597,29 @@
             const customWord = gameData.customWord;
             const customTheme = gameData.customTheme;
             
+            // MODIFIED: Larger word list usage
             const secretWord = customWord || SECRET_WORDS[Math.floor(Math.random() * SECRET_WORDS.length)];
-            const theme = customWord ? (customTheme || "General") : "Location/Place"; 
+            const theme = customWord ? (customTheme || "General") : "General/Mixed"; 
             
+            // MODIFIED: Start player Logic
+            // "First word of the game is always different in the first round"
+            // Logic: Pick a random Regular player who is NOT the Host (if possible)
             const regularPlayerIds = Object.keys(newPlayers).filter(id => newPlayers[id].role === "Regular");
-            
+            const nonHostRegulars = regularPlayerIds.filter(id => id !== hostId);
+
             let startPlayerId;
-            if (regularPlayerIds.length > 0) {
+            
+            if (nonHostRegulars.length > 0) {
+                // Ideally, a regular who isn't the host starts
+                startPlayerId = nonHostRegulars[Math.floor(Math.random() * nonHostRegulars.length)];
+            } else if (regularPlayerIds.length > 0) {
+                // If everyone else is infiltrado (unlikely), host starts
                 startPlayerId = regularPlayerIds[Math.floor(Math.random() * regularPlayerIds.length)];
             } else {
-                console.warn("No regular players found! Starting with a random player.");
-                startPlayerId = shuffledPlayerIds[Math.floor(Math.random() * shuffledPlayerIds.length)];
+                // Fallback
+                startPlayerId = playerIds[Math.floor(Math.random() * playerIds.length)];
             }
 
-            // --- Update Game Doc ---
             try {
                 const gameRef = getGameDocRef(currentGameId);
                 await updateDoc(gameRef, {
@@ -713,7 +633,7 @@
                     round: 1,
                     gameTurn: 1,
                     words: [],
-                    log: arrayUnion(`Game started! Theme: ${theme}. Roles assigned.`)
+                    log: arrayUnion(`Game started! Theme: ${theme}. Roles assigned. ${newPlayers[startPlayerId].name} starts!`)
                 });
             } catch (error) {
                 console.error("Error starting game:", error);
@@ -757,7 +677,7 @@
                         word: word,
                         round: round,
                         gameTurn: gameTurn,
-                        reactions: {} // NEW: Add empty reactions object
+                        reactions: {} 
                     })
                 });
                 wordInput.value = "";
@@ -850,7 +770,6 @@
             let logMessage;
 
             if (tiedPlayers.length === 0) {
-                console.warn("No votes cast? Defaulting to random elim.");
                 const alivePlayers = Object.keys(gameData.players).filter(id => gameData.players[id].isAlive);
                 eliminatedPlayerId = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
                 logMessage = "No votes were cast! By random choice,";
@@ -867,7 +786,6 @@
             logMessage += ` ${eliminatedPlayer.name} is eliminated.`;
             const revealMessage = `${eliminatedPlayer.name} was... an ${eliminatedPlayer.role}!`;
 
-            // --- Check Win Conditions ---
             const finalPlayerCounts = { ...gameData.players };
             finalPlayerCounts[eliminatedPlayerId].isAlive = false;
             
@@ -911,78 +829,54 @@
             }
         }
         
-        // --- NEW: Reaction Functions ---
-        
-        /**
-         * Opens the emoji reaction modal for a specific word.
-         * @param {string} wordIndex - The index of the word in the `words` array.
-         */
         function openReactModal(wordIndex) {
             if (!localGameData.players[currentUserId]?.isAlive) {
                 return showError("Eliminated players can't react.");
             }
             
-            reactingToWordIndex = parseInt(wordIndex); // Store the index
+            reactingToWordIndex = parseInt(wordIndex); 
             
-            // Populate the modal with emoji buttons
-            reactEmojiList.innerHTML = REACTION_EMOJIS.map(hex => `
-                <button class="emoji-react-button neu-button neu-outset-sm p-2 rounded-lg" data-emoji-hex="${hex}">
-                    <img src="${getEmojiUrl(hex)}" alt="emoji" class="w-8 h-8">
+            // MODIFIED: Render standard emojis
+            reactEmojiList.innerHTML = REACTION_EMOJIS.map(emoji => `
+                <button class="emoji-react-button neu-button neu-outset-sm p-2 rounded-lg emoji-xl" data-emoji="${emoji}">
+                    ${emoji}
                 </button>
             `).join("");
             
             reactModal.classList.remove("hidden");
         }
 
-        /**
-         * Submits an emoji reaction for a word.
-         * Uses the "Read-and-Rewrite" array update method for Firestore.
-         * @param {number} wordIndex - The index of the word in the `words` array.
-         * @param {string} emojiHex - The hex code of the emoji reaction.
-         */
-        async function submitReaction(wordIndex, emojiHex) {
+        async function submitReaction(wordIndex, emoji) {
             if (wordIndex === null || !currentUserId || !currentGameId) return;
 
-            // 1. Create a deep copy of the words array
             const newWordsArray = JSON.parse(JSON.stringify(localGameData.words));
             
-            if (!newWordsArray[wordIndex]) {
-                console.error("Word index out of bounds:", wordIndex);
-                return;
-            }
+            if (!newWordsArray[wordIndex]) return;
 
-            // 2. Modify the specific word's reactions
             if (!newWordsArray[wordIndex].reactions) {
                 newWordsArray[wordIndex].reactions = {};
             }
 
-            // Toggle logic: If clicking the same emoji, remove reaction.
-            if (newWordsArray[wordIndex].reactions[currentUserId] === emojiHex) {
+            if (newWordsArray[wordIndex].reactions[currentUserId] === emoji) {
                 delete newWordsArray[wordIndex].reactions[currentUserId];
             } else {
-                // Add or update reaction
-                newWordsArray[wordIndex].reactions[currentUserId] = emojiHex;
+                newWordsArray[wordIndex].reactions[currentUserId] = emoji;
             }
             
             try {
-                // 3. Write the entire modified array back to Firestore
                 const gameRef = getGameDocRef(currentGameId);
                 await updateDoc(gameRef, {
                     words: newWordsArray 
                 });
                 
-                // Close modal
                 reactModal.classList.add("hidden");
                 reactingToWordIndex = null;
-                // Snapshot listener will handle the UI update
                 
             } catch (error) {
                 console.error("Error submitting reaction:", error);
                 showError("Could not submit reaction.");
             }
         }
-        
-        // --- End of NEW Reaction Functions ---
         
         async function playAgain() {
             if (!isHost) return;
@@ -1040,12 +934,9 @@
             }
         }
 
-        // --- UI Update Function ---
         function updateUI(gameData) {
-            // NEW: Update 3D scene first
             updateThreeScene(gameData);
 
-            // --- Get player data (needed for modals) ---
             const myPlayerData = gameData.players[currentUserId];
             const amIAlive = myPlayerData && myPlayerData.isAlive;
 
@@ -1056,14 +947,13 @@
                 lobbyGameIdDisplay.textContent = `Game ID: ${gameData.gameId}`;
                 
                 const players = Object.values(gameData.players);
-                // NEW: Use img tag for emoji
+                // MODIFIED: Render emoji directly
                 lobbyPlayerList.innerHTML = players.map(p => 
                     `<li class="neu-outset-sm p-2 flex items-center">
-                        <img src="${getEmojiUrl(p.symbol)}" alt="icon" class="w-5 h-5 mr-2"> ${p.name}
+                        <span class="mr-2 emoji-icon">${p.symbol}</span> ${p.name}
                     </li>`
                 ).join("");
                 
-                // Host controls
                 startGameButton.classList.toggle("hidden", !isHost);
                 $$(".host-setting").forEach(el => el.disabled = !isHost);
                 if (isHost) {
@@ -1089,7 +979,6 @@
                 revealRoleButton.classList.toggle("hidden", !myPlayerData);
                 updateRoleVisibility(); 
 
-                // Game Status
                 let statusText = "";
                 if (gameData.state === "word_round") {
                     const turnPlayerName = gameData.players[gameData.turn]?.name || "Someone";
@@ -1101,37 +990,31 @@
                 }
                 gameStatus.textContent = statusText;
 
-                // Word Input
                 const isMyTurn = gameData.state === "word_round" && gameData.turn === currentUserId;
                 wordInputContainer.classList.toggle("hidden", !isMyTurn || !amIAlive);
 
-                // Word List
-                // NEW: Updated to show reactions and react button
                 gameWordList.innerHTML = gameData.words.map((w, index) => {
-                    const playerSymbolHex = gameData.players[w.player]?.symbol;
-                    const playerSymbolImg = playerSymbolHex ? `<img src="${getEmojiUrl(playerSymbolHex)}" alt="icon" class="w-5 h-5 mr-2">` : "❔";
+                    const playerSymbol = gameData.players[w.player]?.symbol || "❓";
                     
-                    // Generate HTML for reactions
-                    const reactionsHTML = Object.entries(w.reactions || {}).map(([userId, emojiHex]) => {
-                        const reactorSymbolHex = gameData.players[userId]?.symbol || "2753"; // Fallback '?'
+                    // MODIFIED: Render reactions with standard emojis
+                    const reactionsHTML = Object.entries(w.reactions || {}).map(([userId, emoji]) => {
+                        const reactorSymbol = gameData.players[userId]?.symbol || "❓";
                         return `<div class="neu-inset px-2 py-1 rounded-full flex items-center text-xs">
-                                    <img src="${getEmojiUrl(reactorSymbolHex)}" alt="icon" class="w-3 h-3 mr-1">
-                                    <img src="${getEmojiUrl(emojiHex)}" alt="reaction" class="w-4 h-4">
+                                    <span class="mr-1">${reactorSymbol}</span>
+                                    <span>${emoji}</span>
                                 </div>`;
                     }).join("");
 
                     return `<li class="neu-outset-sm p-2">
                         <span class="font-bold text-indigo-600 flex items-center">
-                            ${playerSymbolImg} ${w.name} (R${w.round}):
+                            <span class="mr-2 emoji-icon">${playerSymbol}</span> ${w.name} (R${w.round}):
                         </span>
                         <span class="ml-2 text-gray-800 break-words">${w.word}</span>
                         
-                        <!-- NEW: Reactions Display -->
                         <div class="flex flex-wrap gap-1 mt-2">
                             ${reactionsHTML}
                         </div>
 
-                        <!-- NEW: React Button -->
                         <button class="react-button neu-button neu-outset-sm p-1 text-xs mt-2 ml-auto block" data-word-index="${index}">
                             React
                         </button>
@@ -1139,16 +1022,14 @@
                 }).join("");
                 gameWordList.scrollTop = gameWordList.scrollHeight;
                 
-                // Player List
-                // NEW: Use img tag for emoji
+                // MODIFIED: Player List using standard emojis
                 gamePlayerList.innerHTML = Object.values(gameData.players).map(p => 
                     `<li class="p-2 rounded-lg flex items-center ${p.isAlive ? 'neu-outset-sm' : 'neu-inset text-gray-500 line-through'}">
-                        <img src="${getEmojiUrl(p.symbol)}" alt="icon" class="w-5 h-5 mr-2"> ${p.name}
+                        <span class="mr-2 emoji-icon">${p.symbol}</span> ${p.name}
                         ${p.isAlive ? '' : ' (Eliminated)'}
                     </li>`
                 ).join("");
                 
-                // Game Log
                 gameLog.innerHTML = gameData.log.slice().reverse().map(entry => 
                     `<li class="text-xs text-gray-600">${entry}</li>`
                 ).join("");
@@ -1161,12 +1042,10 @@
                     .map(id => {
                         const player = gameData.players[id];
                         const isMe = id === currentUserId;
-                        // NEW: Use img tag for emoji
-                        const playerSymbolHex = player.symbol;
-                        const playerSymbolImg = playerSymbolHex ? `<img src="${getEmojiUrl(playerSymbolHex)}" alt="icon" class="w-5 h-5 mr-2">` : "❔";
+                        const playerSymbol = player.symbol || "❓";
                         
                         return `<button data-vote-id="${id}" class="vote-button w-full p-3 rounded-lg neu-button neu-outset ${isMe ? 'neu-button-gray opacity-50 cursor-not-allowed' : 'neu-button-red'} flex items-center justify-center">
-                            Vote ${playerSymbolImg} ${player.name} ${isMe ? '(You)' : ''}
+                            Vote <span class="mx-2 emoji-icon">${playerSymbol}</span> ${player.name} ${isMe ? '(You)' : ''}
                         </button>`;
                     }).join("");
                 votingModal.classList.remove("hidden");
@@ -1180,10 +1059,9 @@
                 gameOverWinner.textContent = `${gameData.winner} Win!`;
                 gameOverSecretWord.textContent = `Word: ${gameData.secretWord} (Theme: ${gameData.theme})`;
                 
-                // NEW: Use img tag for emoji and render as HTML
                 const infiltradoNames = Object.values(gameData.players)
                     .filter(p => p.role === "Infiltrado")
-                    .map(p => `<span class="inline-flex items-center justify-center mx-1"><img src="${getEmojiUrl(p.symbol)}" alt="icon" class="w-5 h-5 mr-1"> ${p.name}</span>`) 
+                    .map(p => `<span class="inline-flex items-center justify-center mx-1"><span class="mr-1 emoji-icon">${p.symbol}</span> ${p.name}</span>`) 
                     .join(", ");
                 gameOverInfiltrados.innerHTML = `Infiltrados: ${infiltradoNames}`;
                 
@@ -1193,8 +1071,6 @@
                 gameOverModal.classList.add("hidden");
             }
         }
-        
-        // --- Helper Functions ---
         
         function generateGameId() {
             return Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -1225,21 +1101,17 @@
 
         // --- Event Listeners ---
         window.addEventListener("load", () => {
-            // NEW: Assign all DOM elements now that the page is loaded
             $ = (selector) => document.querySelector(selector);
             $$ = (selector) => document.querySelectorAll(selector);
 
-            // Page Sections
             loginSection = $("#login-section");
             lobbySection = $("#lobby-section");
             gameSection = $("#game-section");
             
-            // Login
             usernameInput = $("#username-input");
             setUsernameButton = $("#set-username-button");
             loginError = $("#login-error");
 
-            // Lobby
             createGameButton = $("#create-game-button");
             joinGameButton = $("#join-game-button");
             gameIdInput = $("#game-id-input");
@@ -1247,7 +1119,6 @@
             lobbyPlayerList = $("#lobby-player-list");
             startGameButton = $("#start-game-button");
 
-            // Game Settings (Lobby)
             totalPlayersSelect = $("#total-players-select");
             infiltradosSelect = $("#infiltrados-select");
             roundsBeforeVoteSelect = $("#rounds-before-vote-select");
@@ -1257,7 +1128,6 @@
             setCustomWordButton = $("#set-custom-word-button");
             clearCustomWordButton = $("#clear-custom-word-button");
             
-            // Game
             gameInfoRole = $("#game-info-role");
             gameInfoWord = $("#game-info-word");
             revealRoleButton = $("#reveal-role-button");
@@ -1271,7 +1141,6 @@
             gameIdDisplay = $("#game-id-display");
             gameThemeDisplay = $("#game-theme-display"); 
 
-            // Modals
             votingModal = $("#voting-modal");
             votingPlayerButtons = $("#voting-player-buttons");
             gameOverModal = $("#game-over-modal");
@@ -1281,14 +1150,10 @@
             leaveGameButton = $("#leave-game-button");
             playAgainButton = $("#play-again-button");
 
-            // NEW: Reaction Modal Assignments
             reactModal = $("#react-modal");
             reactEmojiList = $("#react-emoji-list");
             closeReactModal = $("#close-react-modal");
 
-            // --- End of NEW DOM Assignments ---
-
-            // NEW: Init Three.js first
             initThree();
 
             showSection("login");
@@ -1307,7 +1172,6 @@
                 if (e.key === "Enter") submitWord();
             });
             
-            // NEW: Event delegation for reaction buttons
             gameWordList.addEventListener("click", (e) => {
                 const button = e.target.closest(".react-button");
                 if (button && button.dataset.wordIndex) {
@@ -1315,7 +1179,6 @@
                 }
             });
             
-            // NEW: Listeners for the reaction modal
             closeReactModal.addEventListener("click", () => {
                 reactModal.classList.add("hidden");
                 reactingToWordIndex = null;
@@ -1324,8 +1187,8 @@
             reactEmojiList.addEventListener("click", (e) => {
                 const button = e.target.closest(".emoji-react-button");
                 if (button && reactingToWordIndex !== null) {
-                    const emojiHex = button.dataset.emojiHex;
-                    submitReaction(reactingToWordIndex, emojiHex);
+                    const emoji = button.dataset.emoji;
+                    submitReaction(reactingToWordIndex, emoji);
                 }
             });
 
@@ -1399,10 +1262,8 @@
 </head>
 <body class="h-full font-sans text-gray-700">
 
-    <!-- NEW: 3D Background Canvas -->
     <canvas id="bg-canvas"></canvas>
 
-    <!-- Login Section -->
     <section id="login-section" class="flex items-center justify-center h-full p-4">
         <div class="neu-outset p-8 rounded-2xl w-full max-w-sm">
             <h1 class="text-3xl font-bold text-gray-800 text-center mb-6">Welcome to Infiltrados</h1>
@@ -1414,22 +1275,17 @@
                 </button>
                 <p id="login-error" class="text-red-600 text-sm text-center h-4"></p>
             </div>
-            <!-- NEW: Version Number -->
-            <p class="text-xs text-gray-500 text-center mt-6">v1.2.2</p>
+            <p class="text-xs text-gray-500 text-center mt-6">v1.2.3</p>
         </div>
     </section>
 
-    <!-- Lobby Section -->
     <section id="lobby-section" class="hidden h-full p-4 md:p-8 overflow-y-auto">
         <div class="max-w-4xl mx-auto">
             <h1 class="text-3xl font-bold text-gray-800 text-center mb-6">Game Lobby</h1>
             
-            <!-- Join/Create -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                <!-- Create Game -->
                 <div class="neu-outset p-6 rounded-2xl">
                     <h2 class="text-xl font-semibold text-gray-800 mb-4">Create New Game</h2>
-                    <!-- Settings -->
                     <div class="space-y-3 mb-4">
                         <div>
                             <label for="total-players-select" class="block text-sm font-medium text-gray-600">Total Players</label>
@@ -1466,7 +1322,6 @@
                     </button>
                 </div>
                 
-                <!-- Join Game -->
                 <div class="neu-outset p-6 rounded-2xl">
                     <h2 class="text-xl font-semibold text-gray-800 mb-4">Join Game</h2>
                     <label for="game-id-input" class="block text-sm font-medium text-gray-600">Enter Game ID:</label>
@@ -1477,12 +1332,10 @@
                 </div>
             </div>
             
-            <!-- Current Lobby -->
             <div class="neu-outset p-6 rounded-2xl">
                 <h2 class="text-2xl font-semibold text-gray-800 mb-4">Waiting Room</h2>
                 <h3 id="lobby-game-id" class="text-xl text-indigo-500 font-mono mb-4"></h3>
 
-                <!-- Custom Word Input (Host Only) -->
                 <div id="custom-word-container" class="hidden mb-4 p-4 neu-inset rounded-lg space-y-2">
                     <div>
                         <label for="custom-word-input" class="block text-sm font-medium text-gray-600">Custom Secret Word (Host Only)</label>
@@ -1500,8 +1353,7 @@
 
                 <h4 class="text-lg text-gray-800 mb-2">Players:</h4>
                 <ul id="lobby-player-list" class="space-y-2 mb-4">
-                    <!-- Player list injected by JS -->
-                </ul>
+                    </ul>
                 <button id="start-game-button" class="w-full p-3 rounded-lg neu-button neu-outset neu-button-red hidden">
                     Start Game (Host Only)
                 </button>
@@ -1510,10 +1362,8 @@
         </div>
     </section>
 
-    <!-- Game Section -->
     <section id="game-section" class="hidden h-full flex flex-col p-4 md:p-8">
         <div class="flex-shrink-0 mb-4">
-            <!-- Top Bar -->
             <div class="neu-outset flex flex-wrap justify-between items-center p-4 rounded-2xl gap-4">
                 <div>
                     <h1 class="text-2xl font-bold text-gray-800">Infiltrados</h1>
@@ -1529,30 +1379,23 @@
                 </div>
                 <button id="leave-game-button" class="p-2 neu-button neu-outset-sm rounded-lg text-sm neu-button-gray self-start">Leave Game</button>
             </div>
-            <!-- Status Bar -->
             <div id="game-status" class="text-center text-xl font-semibold text-yellow-600 p-4">
                 Loading game...
             </div>
         </div>
 
-        <!-- Main Game Area -->
         <div class="flex-grow grid grid-cols-1 lg:grid-cols-4 gap-6 min-h-0">
             
-            <!-- Players -->
             <div class="neu-outset p-4 rounded-2xl overflow-y-auto">
                 <h3 class="text-lg font-semibold text-gray-800 mb-3 border-b border-gray-300 pb-2">Players</h3>
                 <ul id="game-player-list" class="space-y-2">
-                    <!-- Player list injected by JS -->
-                </ul>
+                    </ul>
             </div>
             
-            <!-- Words -->
             <div class="neu-outset p-4 rounded-2xl lg:col-span-2 flex flex-col">
                 <h3 class="text-lg font-semibold text-gray-800 mb-3 border-b border-gray-300 pb-2">Word List</h3>
                 <ul id="game-word-list" class="flex-grow space-y-2 overflow-y-auto h-64 md:h-auto p-1">
-                    <!-- Word list injected by JS -->
-                </ul>
-                <!-- Word Input -->
+                    </ul>
                 <div id="word-input-container" class="mt-4 flex gap-2 hidden">
                     <input type="text" id="word-input" class="flex-grow p-3 neu-inset neu-input" placeholder="Your word...">
                     <button id="submit-word-button" class="p-3 rounded-lg neu-button neu-outset text-indigo-600">
@@ -1561,28 +1404,23 @@
                 </div>
             </div>
             
-            <!-- Log -->
             <div class="neu-outset p-4 rounded-2xl overflow-y-auto">
                 <h3 class="text-lg font-semibold text-gray-800 mb-3 border-b border-gray-300 pb-2">Game Log</h3>
                 <ul id="game-log" class="space-y-1 h-64 md:h-auto max-h-72"> 
-                    <!-- Log entries injected by JS -->
-                </ul>
+                    </ul>
             </div>
             
         </div>
     </section>
     
-    <!-- Voting Modal -->
     <div id="voting-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
         <div class="neu-outset p-8 rounded-2xl shadow-xl w-full max-w-md">
             <h2 class="text-3xl font-bold text-gray-800 text-center mb-6">Vote to Eliminate!</h2>
             <div id="voting-player-buttons" class="space-y-3">
-                <!-- Voting buttons injected by JS -->
-            </div>
+                </div>
         </div>
     </div>
     
-    <!-- Game Over Modal -->
     <div id="game-over-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
         <div class="neu-outset p-8 rounded-2xl shadow-xl w-full max-w-md text-center">
             <h2 id="game-over-winner" class="text-4xl font-bold text-yellow-600 mb-4"></h2>
@@ -1596,13 +1434,11 @@
         </div>
     </div>
 
-    <!-- NEW: Emoji React Modal -->
     <div id="react-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
         <div class="neu-outset p-6 rounded-2xl shadow-xl w-full max-w-sm">
             <h2 class="text-2xl font-bold text-gray-800 text-center mb-4">React to Word</h2>
             <div id="react-emoji-list" class="flex flex-wrap justify-center gap-2">
-                <!-- Emojis populated by JS -->
-            </div>
+                </div>
             <button id="close-react-modal" class="w-full p-2 mt-4 rounded-lg neu-button neu-outset neu-button-gray">
                 Cancel
             </button>
