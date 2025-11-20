@@ -163,7 +163,6 @@
         ];
         
         // --- Emojis (Native Unicode) ---
-        // Fixed: Using native emojis ensures they display without broken image links
         const REACTION_EMOJIS = ["😂", "😍", "🤔", "💩", "🔥", "❓", "👍", "👎"]; 
         const PLAYER_SYMBOLS = [
             "👑", "🚀", "⭐", "🤖", "🦊", "🦄", "🍕", "⚽", 
@@ -594,9 +593,15 @@
             }
 
             // --- Pick Word & Start Player ---
-            const customWord = gameData.customWord;
-            const customTheme = gameData.customTheme;
+            // FIX: Check if host has a value in the input box but didn't click "Set"
+            let customWord = gameData.customWord;
+            let customTheme = gameData.customTheme;
             
+            if (customWordInput && customWordInput.value.trim().length > 0) {
+                customWord = customWordInput.value.trim();
+                customTheme = customThemeInput.value.trim();
+            }
+
             // MODIFIED: Larger word list usage
             const secretWord = customWord || SECRET_WORDS[Math.floor(Math.random() * SECRET_WORDS.length)];
             const theme = customWord ? (customTheme || "General") : "General/Mixed"; 
@@ -643,8 +648,9 @@
         
         async function submitWord() {
             const word = wordInput.value.trim();
-            if (word.length < 2 || word.includes(" ")) {
-                return showError("Please enter a single, valid word.");
+            // FIX: Allow words with spaces (e.g. "Lionel Messi")
+            if (word.length < 2) {
+                return showError("Please enter a valid word/phrase.");
             }
             
             if (localGameData.turn !== currentUserId) {
@@ -836,7 +842,6 @@
             
             reactingToWordIndex = parseInt(wordIndex); 
             
-            // MODIFIED: Render standard emojis
             reactEmojiList.innerHTML = REACTION_EMOJIS.map(emoji => `
                 <button class="emoji-react-button neu-button neu-outset-sm p-2 rounded-lg emoji-xl" data-emoji="${emoji}">
                     ${emoji}
@@ -947,7 +952,6 @@
                 lobbyGameIdDisplay.textContent = `Game ID: ${gameData.gameId}`;
                 
                 const players = Object.values(gameData.players);
-                // MODIFIED: Render emoji directly
                 lobbyPlayerList.innerHTML = players.map(p => 
                     `<li class="neu-outset-sm p-2 flex items-center">
                         <span class="mr-2 emoji-icon">${p.symbol}</span> ${p.name}
@@ -996,7 +1000,6 @@
                 gameWordList.innerHTML = gameData.words.map((w, index) => {
                     const playerSymbol = gameData.players[w.player]?.symbol || "❓";
                     
-                    // MODIFIED: Render reactions with standard emojis
                     const reactionsHTML = Object.entries(w.reactions || {}).map(([userId, emoji]) => {
                         const reactorSymbol = gameData.players[userId]?.symbol || "❓";
                         return `<div class="neu-inset px-2 py-1 rounded-full flex items-center text-xs">
@@ -1022,7 +1025,6 @@
                 }).join("");
                 gameWordList.scrollTop = gameWordList.scrollHeight;
                 
-                // MODIFIED: Player List using standard emojis
                 gamePlayerList.innerHTML = Object.values(gameData.players).map(p => 
                     `<li class="p-2 rounded-lg flex items-center ${p.isAlive ? 'neu-outset-sm' : 'neu-inset text-gray-500 line-through'}">
                         <span class="mr-2 emoji-icon">${p.symbol}</span> ${p.name}
@@ -1207,8 +1209,9 @@
                 if (!isHost || !currentGameId || localGameData.state !== 'lobby') return;
                 const word = customWordInput.value.trim();
                 const theme = customThemeInput.value.trim(); 
-                if (word.length < 2 || word.includes(" ")) {
-                    showError("Custom word must be a single word, min 2 chars.");
+                // FIX: Allow spaces
+                if (word.length < 2) {
+                    showError("Custom word must be min 2 chars.");
                     return;
                 }
                 try {
@@ -1275,7 +1278,7 @@
                 </button>
                 <p id="login-error" class="text-red-600 text-sm text-center h-4"></p>
             </div>
-            <p class="text-xs text-gray-500 text-center mt-6">v1.2.3</p>
+            <p class="text-xs text-gray-500 text-center mt-6">v1.2.4</p>
         </div>
     </section>
 
