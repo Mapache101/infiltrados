@@ -3,18 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Packet Sniffer — IGCSE Data Transmission Lab</title>
-    <!-- Firebase v9 Modular SDK (CDN) -->
+    <title>IGCSE Data Transmission Lab — Interactive Multiplayer Game</title>
+    
+    <!-- ============================================
+         FIREBASE V9 MODULAR SDK — CDN IMPORTS
+         We use the modular SDK to tree-shake unused
+         code and follow modern ES-module patterns.
+         ============================================ -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
         import {
             getFirestore,
             collection,
-            addDoc,
+            doc,
+            setDoc,
+            getDoc,
+            updateDoc,
             onSnapshot,
+            addDoc,
             serverTimestamp,
             query,
-            orderBy
+            orderBy,
+            deleteDoc,
+            arrayUnion,
+            arrayRemove
         } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
         // ============================================
@@ -23,7 +35,6 @@
         const firebaseConfig = typeof __firebase_config !== 'undefined'
             ? JSON.parse(__firebase_config)
             : {
-                // Fallback config (user's original)
                 apiKey: "AIzaSyAG6v0TT9miam83wXOB4aqdqD6qbc5GhPo",
                 authDomain: "infiltrados-game.firebaseapp.com",
                 projectId: "infiltrados-game",
@@ -32,472 +43,1474 @@
                 appId: "1:742547669169:web:68ee3277c5fb077647a290"
             };
 
-        // Initialise Firebase App and Firestore database
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // Reference to the shared collection
-        const payloadsRef = collection(db, "raw_payloads");
+        // ============================================
+        // 2. GLOBAL STATE & CONSTANTS
+        // ============================================
+        const STATE = {
+            roomId: null,
+            userId: 'user_' + Math.random().toString(36).substr(2, 9),
+            role: null,        // 'alice' | 'bob' | 'hacker'
+            roomRef: null,
+            unsubscribers: [], // Track onSnapshot listeners for cleanup
+            currentBinary: '', // Working binary string before sending
+            flippedIndex: -1,  // Index of intentionally flipped bit
+            config: {
+                representation: 'text',    // text | image | sound
+                transmissionMode: 'simplex', // simplex | halfDuplex | fullDuplex
+                method: 'serial',          // serial | parallel
+                parity: 'none',            // none | even | odd
+                packetSwitching: false
+            }
+        };
+
+        // Network topology for visualisation
+        // A simplified mesh: Alice -- R1 -- R2 -- Bob
+        //                         \   |   /   /
+        //                          \  R3  /
+        const NETWORK_NODES = [
+            { id: 'alice',  label: 'Alice',  x: 50,  y: 200, type: 'endpoint' },
+            { id: 'r1',     label: 'Router 1', x: 200, y: 100, type: 'router' },
+            { id: 'r2',     label: 'Router 2', x: 350, y: 200, type: 'router' },
+            { id: 'r3',     label: 'Router 3', x: 200, y: 300, type: 'router' },
+            { id: 'bob',    label: 'Bob',    x: 500, y: 200, type: 'endpoint' }
+        ];
+
+        const NETWORK_LINKS = [
+            { from: 'alice', to: 'r1' },
+            { from: 'alice', to: 'r3' },
+            { from: 'r1', to: 'r2' },
+            { from: 'r1', to: 'r3' },
+            { from: 'r3', to: 'r2' },
+            { from: 'r3', to: 'bob' },
+            { from: 'r2', to: 'bob' }
+        ];
 
         // ============================================
-        // 2. SCREEN NAVIGATION
+        // 3. SCREEN NAVIGATION UTILITIES
         // ============================================
-        const screenRole = document.getElementById('screen-role');
-        const screenSender = document.getElementById('screen-sender');
-        const screenSniffer = document.getElementById('screen-sniffer');
+        const SCREENS = {
+            home: document.getElementById('screen-home'),
+            role: document.getElementById('screen-role'),
+            alice: document.getElementById('screen-alice'),
+            bob: document.getElementById('screen-bob'),
+            hacker: document.getElementById('screen-hacker')
+        };
 
-        function showScreen(screen) {
-            // Hide all screens
-            [screenRole, screenSender, screenSniffer].forEach(s => s.classList.add('hidden'));
-            // Show requested screen
-            screen.classList.remove('hidden');
+        function showScreen(name) {
+            Object.values(SCREENS).forEach(s => s.classList.add('hidden'));
+            SCREENS[name].classList.remove('hidden');
         }
 
-        // Role-selection buttons
-        document.getElementById('btn-sender').addEventListener('click', () => showScreen(screenSender));
-        document.getElementById('btn-sniffer').addEventListener('click', () => {
-            showScreen(screenSniffer);
-            startSniffer(); // Begin real-time listener
-        });
-        document.getElementById('back-sender').addEventListener('click', () => showScreen(screenRole));
-        document.getElementById('back-sniffer').addEventListener('click', () => showScreen(screenRole));
-
         // ============================================
-        // 3. SENDER LOGIC  (Alice)
+        // 4. ROOM MANAGEMENT
         // ============================================
 
         /**
-         * Converts a plain-text string into an ASCII binary string.
-         * Each character -> 8-bit byte, padded with leading zeros.
-         * Example: "A" (ASCII 65) -> "01000001"
+         * Creates a new room document in Firestore.
+         * Room ID is a 4-digit code for easy sharing.
+         */
+        async function createRoom() {
+            const roomId = Math.floor(1000 + Math.random() * 9000).toString();
+            STATE.roomId = roomId;
+            STATE.roomRef = doc(db, 'rooms', roomId);
+            
+            await setDoc(STATE.roomRef, {
+                createdAt: serverTimestamp(),
+                players: {},
+                status: 'waiting',
+                transmissionCount: 0
+            });
+
+            // Also create a 'transmissions' subcollection placeholder
+            // (Firestore creates collections implicitly on first write)
+            
+            document.getElementById('room-code-display').textContent = roomId;
+            showScreen('role');
+            updateRoleButtons();
+        }
+
+        /**
+         * Joins an existing room by 4-digit code.
+         */
+        async function joinRoom() {
+            const roomId = document.getElementById('room-input').value.trim();
+            if (!/^\d{4}$/.test(roomId)) {
+                alert('Please enter a valid 4-digit room code.');
+                return;
+            }
+
+            STATE.roomId = roomId;
+            STATE.roomRef = doc(db, 'rooms', roomId);
+            const snap = await getDoc(STATE.roomRef);
+
+            if (!snap.exists()) {
+                alert('Room not found. Check the code and try again.');
+                return;
+            }
+
+            document.getElementById('room-code-display').textContent = roomId;
+            showScreen('role');
+            updateRoleButtons();
+        }
+
+        /**
+         * Real-time listener to update role availability.
+         * Prevents two Alices or two Bobs in the same room.
+         */
+        function updateRoleButtons() {
+            if (!STATE.roomRef) return;
+
+            const unsub = onSnapshot(STATE.roomRef, (docSnap) => {
+                if (!docSnap.exists()) return;
+                const data = docSnap.data();
+                const players = data.players || {};
+
+                // Disable Alice button if taken by someone else
+                const aliceTaken = players.alice && players.alice.id !== STATE.userId;
+                document.getElementById('btn-role-alice').disabled = aliceTaken;
+                document.getElementById('btn-role-alice').textContent = 
+                    aliceTaken ? '🔒 Alice (Taken)' : '📤 Join as Sender (Alice)';
+
+                // Disable Bob button if taken
+                const bobTaken = players.bob && players.bob.id !== STATE.userId;
+                document.getElementById('btn-role-bob').disabled = bobTaken;
+                document.getElementById('btn-role-bob').textContent = 
+                    bobTaken ? '🔒 Bob (Taken)' : '📥 Join as Receiver (Bob)';
+
+                // Hackers are unlimited
+            });
+
+            STATE.unsubscribers.push(unsub);
+        }
+
+        /**
+         * Select a role and write to Firestore.
+         */
+        async function selectRole(role) {
+            STATE.role = role;
+            const field = role === 'hacker' ? 'hackers' : role;
+            
+            if (role === 'hacker') {
+                // Add to hackers array
+                await updateDoc(STATE.roomRef, {
+                    [`players.hackers`]: arrayUnion({ id: STATE.userId, joinedAt: Date.now() })
+                });
+            } else {
+                // Set alice or bob directly
+                await updateDoc(STATE.roomRef, {
+                    [`players.${role}`]: { id: STATE.userId, joinedAt: Date.now() }
+                });
+            }
+
+            // Navigate to role-specific screen
+            if (role === 'alice') initAliceScreen();
+            else if (role === 'bob') initBobScreen();
+            else if (role === 'hacker') initHackerScreen();
+        }
+
+        // ============================================
+        // 5. DATA CONVERSION FUNCTIONS
+        // ============================================
+
+        /**
+         * ASCII TEXT → BINARY
+         * Each character is converted to its 8-bit ASCII representation.
+         * 'A' = 65 = 01000001. This teaches fixed-width character encoding.
          */
         function textToBinary(text) {
-            let binary = "";
+            let binary = '';
             for (let i = 0; i < text.length; i++) {
-                // Get ASCII code
                 const ascii = text.charCodeAt(i);
-                // Convert to binary and pad to 8 bits
-                const byte = ascii.toString(2).padStart(8, '0');
-                binary += byte;
+                binary += ascii.toString(2).padStart(8, '0');
             }
             return binary;
         }
 
-        const senderTextarea = document.getElementById('sender-input');
-        const senderStatus = document.getElementById('sender-status');
-
-        document.getElementById('btn-send').addEventListener('click', async () => {
-            const rawText = senderTextarea.value.trim();
-            if (!rawText) {
-                senderStatus.textContent = "⚠️ Please type a message first.";
-                return;
-            }
-
-            // Convert message to raw binary payload
-            const binaryPayload = textToBinary(rawText);
-
-            try {
-                // Push to Firestore so the sniffer can intercept it
-                await addDoc(payloadsRef, {
-                    payload: binaryPayload,
-                    timestamp: serverTimestamp()
-                });
-
-                senderStatus.textContent = `✅ Sent! (${binaryPayload.length} bits)`;
-                senderTextarea.value = ""; // Clear input
-            } catch (err) {
-                console.error("Firestore write failed:", err);
-                senderStatus.textContent = "❌ Error sending data. Check console.";
-            }
-        });
-
-        // ============================================
-        // 4. SNIFFER LOGIC  (Hacker)
-        // ============================================
-        const terminalOutput = document.getElementById('terminal-output');
-        const decryptBtn = document.getElementById('btn-decrypt');
-        let latestBinary = ""; // Holds the most recently intercepted payload
-
         /**
-         * Converts an ASCII binary string back to readable text.
-         * Splits into 8-bit chunks, parses each to a character.
+         * BINARY → ASCII TEXT
+         * Splits the string into 8-bit chunks and converts back.
          */
         function binaryToText(binary) {
-            let text = "";
-            // Process in chunks of 8
+            let text = '';
             for (let i = 0; i < binary.length; i += 8) {
                 const byte = binary.slice(i, i + 8);
-                const ascii = parseInt(byte, 2);
-                text += String.fromCharCode(ascii);
+                if (byte.length < 8) break; // Incomplete byte
+                text += String.fromCharCode(parseInt(byte, 2));
             }
             return text;
         }
 
         /**
-         * Appends a line to the terminal with a timestamp.
+         * BITMAP GRID → BINARY
+         * 8×8 grid: 1 = black pixel, 0 = white pixel.
+         * 64 bits total (8 bytes). Teaches raster image representation.
          */
-        function logToTerminal(line, type = 'info') {
-            const entry = document.createElement('div');
-            entry.className = `terminal-line ${type}`;
-            const time = new Date().toLocaleTimeString('en-GB', { hour12: false });
-            entry.textContent = `[${time}] ${line}`;
-            terminalOutput.appendChild(entry);
-            // Auto-scroll to bottom
-            terminalOutput.scrollTop = terminalOutput.scrollHeight;
+        function gridToBinary(grid) {
+            return grid.map(row => row.map(cell => cell ? '1' : '0').join('')).join('');
         }
 
-        let unsubscribeSniffer = null;
+        function binaryToGrid(binary) {
+            const grid = [];
+            for (let i = 0; i < 64; i += 8) {
+                const rowBits = binary.slice(i, i + 8).split('');
+                grid.push(rowBits.map(b => b === '1'));
+            }
+            return grid;
+        }
 
-        function startSniffer() {
-            // If already listening, stop previous listener
-            if (unsubscribeSniffer) unsubscribeSniffer();
+        /**
+         * SOUND → BINARY (Simplified)
+         * Simulates PCM audio: sample rate determines how many samples/second.
+         * Bit depth determines how many bits per sample (quantisation levels).
+         * We generate a binary string representing sample values.
+         */
+        function soundToBinary(sampleRate, bitDepth, durationSec = 1) {
+            const numSamples = Math.min(sampleRate * durationSec, 32); // Cap for demo
+            let binary = '';
+            for (let i = 0; i < numSamples; i++) {
+                // Generate a sine wave value (-1 to 1), quantise to bitDepth
+                const t = i / numSamples;
+                const sine = Math.sin(t * Math.PI * 4); // 2Hz wave for demo
+                // Map -1..1 to 0..(2^bitDepth - 1)
+                const levels = Math.pow(2, bitDepth);
+                const quantised = Math.floor(((sine + 1) / 2) * (levels - 1));
+                binary += quantised.toString(2).padStart(bitDepth, '0');
+            }
+            return { binary, numSamples, bitDepth };
+        }
 
-            logToTerminal("Initializing packet sniffer...", "system");
-            logToTerminal("Listening on collection: raw_payloads", "system");
-            logToTerminal("Waiting for incoming data...", "system");
+        // ============================================
+        // 6. PARITY & ERROR CHECKING
+        // ============================================
 
-            // Real-time Firestore listener
-            // Ordered by timestamp so newest packets appear last
-            const q = query(payloadsRef, orderBy("timestamp", "asc"));
+        /**
+         * Calculates parity bit for even or odd parity.
+         * Even: total 1s (including parity) must be even.
+         * Odd: total 1s (including parity) must be odd.
+         * Returns the full binary string WITH parity bit appended.
+         */
+        function addParityBit(binary, parityType) {
+            if (parityType === 'none') return binary;
+            const ones = binary.split('1').length - 1;
+            let parityBit = '0';
+            if (parityType === 'even') {
+                parityBit = (ones % 2 === 0) ? '0' : '1';
+            } else if (parityType === 'odd') {
+                parityBit = (ones % 2 !== 0) ? '0' : '1';
+            }
+            return binary + parityBit; // Append parity bit at the end
+        }
 
-            unsubscribeSniffer = onSnapshot(q, (snapshot) => {
-                snapshot.docChanges().forEach((change) => {
-                    if (change.type === "added") {
-                        const data = change.doc.data();
-                        const binary = data.payload || "";
-                        latestBinary = binary; // Store for decryption
+        /**
+         * Verifies parity on received binary.
+         * Returns { valid: boolean, payload: string (without parity bit) }
+         */
+        function verifyParity(binary, parityType) {
+            if (parityType === 'none') return { valid: true, payload: binary };
+            if (binary.length === 0) return { valid: true, payload: '' };
+            const payload = binary.slice(0, -1);
+            const parityBit = binary.slice(-1);
+            const ones = payload.split('1').length - 1;
+            const totalOnes = ones + parseInt(parityBit);
+            
+            let valid = false;
+            if (parityType === 'even') valid = (totalOnes % 2 === 0);
+            else if (parityType === 'odd') valid = (totalOnes % 2 !== 0);
+            
+            return { valid, payload };
+        }
 
-                        // Visual feedback: simulate packet interception
-                        logToTerminal(`INTERCEPTED PACKET (${binary.length} bits)`, "packet");
-                        logToTerminal(`RAW BINARY: ${binary}`, "binary");
-                        logToTerminal("---", "system");
+        // ============================================
+        // 7. PACKET SWITCHING LOGIC
+        // ============================================
+
+        /**
+         * Chunks a binary string into packets of fixed size.
+         * Each packet gets a simple header: { seq, total, timestamp }.
+         * This mimics real packet headers (IP/TCP simplified).
+         */
+        function createPackets(binary, chunkSize = 8) {
+            const packets = [];
+            const total = Math.ceil(binary.length / chunkSize);
+            for (let i = 0; i < total; i++) {
+                const payload = binary.slice(i * chunkSize, (i + 1) * chunkSize);
+                packets.push({
+                    seq: i,
+                    total: total,
+                    payload: payload,
+                    header: {
+                        seq: i,
+                        total: total,
+                        timestamp: Date.now(),
+                        checksum: payload.split('1').length - 1 // Simplified checksum
                     }
                 });
-            }, (error) => {
-                logToTerminal(`ERROR: ${error.message}`, "error");
-                console.error("Sniffer listener error:", error);
-            });
+            }
+            return packets;
         }
 
-        // Decrypt button: prove that raw binary is easily readable
-        decryptBtn.addEventListener('click', () => {
-            if (!latestBinary) {
-                logToTerminal("No payload intercepted yet.", "error");
+        /**
+         * Determines a pseudo-random path through the network for a packet.
+         * Different packets may take different routes (key packet-switching concept).
+         */
+        function getPacketPath() {
+            // Possible paths from Alice to Bob
+            const paths = [
+                ['alice', 'r1', 'r2', 'bob'],
+                ['alice', 'r1', 'r3', 'r2', 'bob'],
+                ['alice', 'r3', 'bob'],
+                ['alice', 'r3', 'r2', 'bob']
+            ];
+            return paths[Math.floor(Math.random() * paths.length)];
+        }
+
+        // ============================================
+        // 8. SENDER (ALICE) SCREEN INITIALISATION
+        // ============================================
+        function initAliceScreen() {
+            showScreen('alice');
+            buildBitmapGrid();
+            updateAliceBinaryPreview();
+            drawNetworkMap('alice-network-map', 'alice');
+        }
+
+        // Build the 8×8 interactive bitmap grid
+        function buildBitmapGrid() {
+            const grid = document.getElementById('bitmap-grid');
+            grid.innerHTML = '';
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'bitmap-cell';
+                    cell.dataset.row = r;
+                    cell.dataset.col = c;
+                    cell.addEventListener('click', () => {
+                        cell.classList.toggle('active');
+                        updateAliceBinaryPreview();
+                    });
+                    grid.appendChild(cell);
+                }
+            }
+        }
+
+        // Read current grid state
+        function getGridState() {
+            const cells = document.querySelectorAll('#bitmap-grid .bitmap-cell');
+            const grid = [];
+            for (let r = 0; r < 8; r++) {
+                const row = [];
+                for (let c = 0; c < 8; c++) {
+                    const idx = r * 8 + c;
+                    row.push(cells[idx].classList.contains('active'));
+                }
+                grid.push(row);
+            }
+            return grid;
+        }
+
+        // Update the live binary preview based on current inputs & config
+        function updateAliceBinaryPreview() {
+            const rep = STATE.config.representation;
+            let binary = '';
+
+            if (rep === 'text') {
+                const text = document.getElementById('alice-text-input').value;
+                binary = textToBinary(text);
+            } else if (rep === 'image') {
+                binary = gridToBinary(getGridState());
+            } else if (rep === 'sound') {
+                const rate = parseInt(document.getElementById('sound-rate').value);
+                const depth = parseInt(document.getElementById('sound-depth').value);
+                const result = soundToBinary(rate, depth, 0.5);
+                binary = result.binary;
+                document.getElementById('sound-info').textContent = 
+                    `${result.numSamples} samples × ${depth} bits = ${binary.length} bits`;
+            }
+
+            // Apply parity if configured (preview only; final applied on send)
+            const parityType = document.getElementById('parity-select').value;
+            const withParity = addParityBit(binary, parityType);
+
+            STATE.currentBinary = binary; // Store raw without parity for flip logic
+            renderBinaryString(withParity, 'binary-display');
+        }
+
+        // Render binary as clickable bits for the "Flip a Bit" feature
+        function renderBinaryString(binary, containerId) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            for (let i = 0; i < binary.length; i++) {
+                const bit = document.createElement('span');
+                bit.className = 'bit';
+                bit.textContent = binary[i];
+                bit.dataset.index = i;
+                
+                // Visual grouping: space every 8 bits (bytes)
+                if (i > 0 && i % 8 === 0) {
+                    container.appendChild(document.createTextNode(' '));
+                }
+                
+                // Highlight flipped bit
+                if (i === STATE.flippedIndex) {
+                    bit.classList.add('flipped');
+                    bit.title = 'Intentionally flipped (error simulation)';
+                }
+
+                bit.addEventListener('click', () => {
+                    // Toggle flip at this index
+                    if (STATE.flippedIndex === i) {
+                        STATE.flippedIndex = -1; // Unflip
+                    } else {
+                        STATE.flippedIndex = i; // Flip this bit
+                    }
+                    updateAliceBinaryPreview();
+                });
+                
+                container.appendChild(bit);
+            }
+        }
+
+        // ============================================
+        // 9. NETWORK MAP VISUALISATION (SVG)
+        // ============================================
+
+        /**
+         * Draws the network topology using SVG.
+         * Used by all three roles with different interactive overlays.
+         */
+        function drawNetworkMap(containerId, role) {
+            const container = document.getElementById(containerId);
+            const w = container.clientWidth || 550;
+            const h = 400;
+            const ns = "http://www.w3.org/2000/svg";
+
+            const svg = document.createElementNS(ns, "svg");
+            svg.setAttribute("width", "100%");
+            svg.setAttribute("height", h);
+            svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+            svg.id = `svg-${role}`;
+
+            // Draw links first (so they appear behind nodes)
+            NETWORK_LINKS.forEach(link => {
+                const n1 = NETWORK_NODES.find(n => n.id === link.from);
+                const n2 = NETWORK_NODES.find(n => n.id === link.to);
+                const line = document.createElementNS(ns, "line");
+                line.setAttribute("x1", n1.x);
+                line.setAttribute("y1", n1.y);
+                line.setAttribute("x2", n2.x);
+                line.setAttribute("y2", n2.y);
+                line.setAttribute("stroke", role === 'hacker' ? "#00ff41" : "#94a3b8");
+                line.setAttribute("stroke-width", "2");
+                line.setAttribute("class", "network-link");
+                line.dataset.from = link.from;
+                line.dataset.to = link.to;
+                svg.appendChild(line);
+            });
+
+            // Draw nodes
+            NETWORK_NODES.forEach(node => {
+                const g = document.createElementNS(ns, "g");
+                g.setAttribute("class", "network-node");
+                g.dataset.id = node.id;
+                
+                // Circle
+                const circle = document.createElementNS(ns, "circle");
+                circle.setAttribute("cx", node.x);
+                circle.setAttribute("cy", node.y);
+                circle.setAttribute("r", 25);
+                circle.setAttribute("fill", node.type === 'router' ? '#3b82f6' : '#10b981');
+                circle.setAttribute("stroke", role === 'hacker' ? '#00ff41' : '#fff');
+                circle.setAttribute("stroke-width", "3");
+                
+                // Label
+                const text = document.createElementNS(ns, "text");
+                text.setAttribute("x", node.x);
+                text.setAttribute("y", node.y + 45);
+                text.setAttribute("text-anchor", "middle");
+                text.setAttribute("fill", role === 'hacker' ? '#00ff41' : '#334155');
+                text.setAttribute("font-size", "12");
+                text.setAttribute("font-family", "sans-serif");
+                text.textContent = node.label;
+
+                g.appendChild(circle);
+                g.appendChild(text);
+                svg.appendChild(g);
+
+                // Hacker interaction: tap node to sniff
+                if (role === 'hacker') {
+                    g.style.cursor = 'pointer';
+                    g.addEventListener('click', () => {
+                        document.querySelectorAll(`#svg-hacker .network-node`).forEach(n => {
+                            n.querySelector('circle').setAttribute('stroke', '#00ff41');
+                        });
+                        circle.setAttribute('stroke', '#ffff00'); // Yellow highlight
+                        STATE.snifferNode = node.id;
+                        logToHackerTerminal(`> Tapped ${node.label} (ID: ${node.id}) — filtering traffic...`);
+                    });
+                }
+            });
+
+            container.innerHTML = '';
+            container.appendChild(svg);
+        }
+
+        /**
+         * Animates a packet (or bit) moving along a path on the SVG.
+         * Creates a temporary circle that travels from node to node.
+         */
+        function animatePacketOnMap(svgId, pathIds, color = '#f59e0b', duration = 1000) {
+            const svg = document.getElementById(svgId);
+            if (!svg) return;
+            const ns = "http://www.w3.org/2000/svg";
+
+            // Create packet visual
+            const packet = document.createElementNS(ns, "circle");
+            packet.setAttribute("r", 6);
+            packet.setAttribute("fill", color);
+            packet.setAttribute("class", "packet-anim");
+            svg.appendChild(packet);
+
+            let currentStep = 0;
+            const totalSteps = pathIds.length;
+
+            function step() {
+                if (currentStep >= totalSteps) {
+                    packet.remove();
+                    return;
+                }
+                const node = NETWORK_NODES.find(n => n.id === pathIds[currentStep]);
+                
+                // Animate using Web Animations API
+                packet.animate([
+                    { cx: node.x, cy: node.y }
+                ], {
+                    duration: duration / totalSteps,
+                    fill: 'forwards',
+                    easing: 'ease-in-out'
+                }).onfinish = () => {
+                    currentStep++;
+                    step();
+                };
+            }
+            step();
+        }
+
+        // ============================================
+        // 10. SENDER (ALICE) — SEND LOGIC
+        // ============================================
+
+        async function aliceSendData() {
+            const config = {
+                representation: document.getElementById('rep-select').value,
+                transmissionMode: document.getElementById('mode-select').value,
+                method: document.getElementById('method-select').value,
+                parity: document.getElementById('parity-select').value,
+                packetSwitching: document.getElementById('packet-toggle').checked
+            };
+            STATE.config = config;
+
+            // Get raw binary based on representation
+            let rawBinary = STATE.currentBinary;
+            if (!rawBinary) {
+                alert('No data to send! Type something, draw something, or generate sound.');
                 return;
             }
-            const decrypted = binaryToText(latestBinary);
-            logToTerminal(`🔓 DECRYPTED PAYLOAD: "${decrypted}"`, "decrypted");
-            logToTerminal("⚠️  Lesson: Unencrypted binary is trivial to read!", "warning");
+
+            // Apply parity bit
+            const parityBinary = addParityBit(rawBinary, config.parity);
+
+            // Apply intentional bit flip if selected
+            let finalBinary = parityBinary;
+            let flippedIndex = -1;
+            if (STATE.flippedIndex >= 0 && STATE.flippedIndex < parityBinary.length) {
+                const bits = parityBinary.split('');
+                bits[STATE.flippedIndex] = bits[STATE.flippedIndex] === '0' ? '1' : '0';
+                finalBinary = bits.join('');
+                flippedIndex = STATE.flippedIndex;
+            }
+
+            // Create transmission record
+            const transmissionRef = await addDoc(
+                collection(db, 'rooms', STATE.roomId, 'transmissions'),
+                {
+                    sender: STATE.userId,
+                    senderRole: 'alice',
+                    rawBinary: rawBinary,
+                    parityBinary: parityBinary,
+                    finalBinary: finalBinary,
+                    flippedIndex: flippedIndex,
+                    config: config,
+                    status: 'sending',
+                    timestamp: serverTimestamp()
+                }
+            );
+
+            // If packet switching is ON, create individual packet docs
+            if (config.packetSwitching) {
+                const packets = createPackets(finalBinary, 8); // 8-bit chunks
+                for (const pkt of packets) {
+                    const path = getPacketPath();
+                    await addDoc(collection(db, 'rooms', STATE.roomId, 'packets'), {
+                        transmissionId: transmissionRef.id,
+                        seq: pkt.seq,
+                        total: pkt.total,
+                        payload: pkt.payload,
+                        header: pkt.header,
+                        path: path,
+                        currentNode: 'alice',
+                        status: 'in_transit',
+                        timestamp: serverTimestamp()
+                    });
+                    
+                    // Visual animation on Alice's map
+                    setTimeout(() => {
+                        animatePacketOnMap('svg-alice', path, '#f59e0b', 2000);
+                    }, pkt.seq * 300); // Stagger starts
+                }
+            } else {
+                // Continuous stream: simulate as one "packet" on a single path
+                const path = ['alice', 'r1', 'r2', 'bob'];
+                await addDoc(collection(db, 'rooms', STATE.roomId, 'packets'), {
+                    transmissionId: transmissionRef.id,
+                    seq: 0,
+                    total: 1,
+                    payload: finalBinary,
+                    path: path,
+                    currentNode: 'alice',
+                    status: 'in_transit',
+                    timestamp: serverTimestamp()
+                });
+                animatePacketOnMap('svg-alice', path, '#f59e0b', 2000);
+            }
+
+            document.getElementById('alice-status').textContent = 
+                `✅ Sent! ${finalBinary.length} bits transmitted.`;
+        }
+
+        // ============================================
+        // 11. RECEIVER (BOB) SCREEN INITIALISATION
+        // ============================================
+        function initBobScreen() {
+            showScreen('bob');
+            drawNetworkMap('bob-network-map', 'bob');
+            startBobListeners();
+        }
+
+        function startBobListeners() {
+            // Listen for new packets in this room
+            const packetsQuery = query(
+                collection(db, 'rooms', STATE.roomId, 'packets'),
+                orderBy('timestamp', 'asc')
+            );
+
+            const unsub = onSnapshot(packetsQuery, (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    if (change.type === 'added') {
+                        const pkt = change.doc.data();
+                        handleIncomingPacket(pkt, change.doc.id);
+                    }
+                });
+            });
+            STATE.unsubscribers.push(unsub);
+        }
+
+        /**
+         * Processes an incoming packet on Bob's screen.
+         * Reassembles, checks parity, updates visualisations.
+         */
+        const bobState = {
+            receivedPackets: [],
+            currentTransmission: null
+        };
+
+        function handleIncomingPacket(pkt, docId) {
+            // Animate on Bob's network map
+            if (pkt.path) {
+                animatePacketOnMap('svg-bob', pkt.path, '#10b981', 2000);
+            }
+
+            // Store packet
+            bobState.receivedPackets.push(pkt);
+            
+            // Update status
+            const statusEl = document.getElementById('bob-status');
+            statusEl.textContent = `Receiving packet ${pkt.seq + 1}/${pkt.total}...`;
+
+            // If this is the last packet (or single packet), reassemble
+            if (pkt.total === 1 || bobState.receivedPackets.filter(p => 
+                p.transmissionId === pkt.transmissionId).length >= pkt.total) {
+                
+                reassembleAndDisplay(pkt.transmissionId);
+            }
+        }
+
+        function reassembleAndDisplay(transmissionId) {
+            // Get all packets for this transmission
+            const packets = bobState.receivedPackets
+                .filter(p => p.transmissionId === transmissionId)
+                .sort((a, b) => a.seq - b.seq);
+
+            // Concatenate payloads
+            const fullBinary = packets.map(p => p.payload).join('');
+            
+            // Get transmission config (from first packet's parent, or infer)
+            // For demo, we infer parity from the binary length vs expected
+            // In production, config should be in a separate doc
+            
+            // Try to verify parity (assume even/odd based on user selection)
+            // Since Bob knows the protocol, he attempts even then odd
+            let check = verifyParity(fullBinary, 'even');
+            let parityUsed = 'even';
+            if (!check.valid) {
+                check = verifyParity(fullBinary, 'odd');
+                parityUsed = 'odd';
+            }
+
+            const statusEl = document.getElementById('bob-status');
+            const parityIndicator = document.getElementById('parity-indicator');
+
+            if (check.valid) {
+                parityIndicator.innerHTML = '✅ <strong>Parity Check Passed</strong> (' + parityUsed + ')';
+                parityIndicator.className = 'status-box success';
+            } else {
+                parityIndicator.innerHTML = '❌ <strong>Parity Check Failed!</strong> Error detected. Simulating ARQ...';
+                parityIndicator.className = 'status-box error';
+                // Simulate ARQ request
+                setTimeout(() => {
+                    statusEl.textContent = '🔄 ARQ: Automatic Repeat Request sent to Alice...';
+                }, 1500);
+            }
+
+            // Display reassembled data based on representation
+            // For this demo, we try text first, then image, then sound
+            const text = binaryToText(check.payload);
+            document.getElementById('bob-text-output').value = text;
+
+            // If payload is exactly 64 bits, also show as image
+            if (check.payload.length === 64) {
+                const grid = binaryToGrid(check.payload);
+                renderBobGrid(grid);
+            }
+
+            statusEl.textContent = '✅ Message Recomposed Successfully!';
+        }
+
+        function renderBobGrid(grid) {
+            const container = document.getElementById('bob-image-output');
+            container.innerHTML = '';
+            const table = document.createElement('table');
+            table.className = 'bob-grid';
+            grid.forEach(row => {
+                const tr = document.createElement('tr');
+                row.forEach(cell => {
+                    const td = document.createElement('td');
+                    td.style.background = cell ? '#000' : '#fff';
+                    td.style.width = '20px';
+                    td.style.height = '20px';
+                    tr.appendChild(td);
+                });
+                table.appendChild(tr);
+            });
+            container.appendChild(table);
+        }
+
+        // ============================================
+        // 12. SNIFFER (HACKER) SCREEN INITIALISATION
+        // ============================================
+        function initHackerScreen() {
+            showScreen('hacker');
+            drawNetworkMap('hacker-network-map', 'hacker');
+            startHackerListeners();
+            logToHackerTerminal('> Session started. Tap a node to intercept traffic.');
+            logToHackerTerminal('> Default: listening on ALL nodes.');
+        }
+
+        function startHackerListeners() {
+            // Listen to ALL packets in the room (the "wire")
+            const packetsQuery = query(
+                collection(db, 'rooms', STATE.roomId, 'packets'),
+                orderBy('timestamp', 'asc')
+            );
+
+            const unsub = onSnapshot(packetsQuery, (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    if (change.type === 'added') {
+                        const pkt = change.doc.data();
+                        handleInterceptedPacket(pkt);
+                    }
+                });
+            });
+            STATE.unsubscribers.push(unsub);
+        }
+
+        function handleInterceptedPacket(pkt) {
+            // If hacker has selected a specific node, only show packets passing through it
+            if (STATE.snifferNode && STATE.snifferNode !== 'all') {
+                if (!pkt.path.includes(STATE.snifferNode)) return;
+            }
+
+            const time = new Date().toLocaleTimeString('en-GB');
+            logToHackerTerminal(`[${time}] PACKET INTERCEPTED`);
+            logToHackerTerminal(`  Header: seq=${pkt.seq}, total=${pkt.total}, ts=${pkt.header?.timestamp || 'N/A'}`);
+            logToHackerTerminal(`  Payload (raw binary): ${pkt.payload}`);
+            logToHackerTerminal(`  Route: ${pkt.path.join(' → ')}`);
+            logToHackerTerminal(`  Current Node: ${pkt.currentNode}`);
+            logToHackerTerminal(`  ---`);
+
+            // Store latest for decryption
+            STATE.latestInterceptedBinary = pkt.payload;
+        }
+
+        function logToHackerTerminal(text, type = 'info') {
+            const term = document.getElementById('hacker-terminal');
+            const line = document.createElement('div');
+            line.className = `term-line ${type}`;
+            line.textContent = text;
+            term.appendChild(line);
+            term.scrollTop = term.scrollHeight;
+        }
+
+        /**
+         * Decrypts the latest intercepted binary payload back to ASCII.
+         * Proves that unencrypted binary is trivially readable.
+         */
+        function decryptPayload() {
+            if (!STATE.latestInterceptedBinary) {
+                logToHackerTerminal('> ERROR: No payload intercepted yet.', 'error');
+                return;
+            }
+            const text = binaryToText(STATE.latestInterceptedBinary);
+            logToHackerTerminal(`> 🔓 DECRYPTED: "${text}"`, 'highlight');
+            logToHackerTerminal(`> ⚠️  LESSON: Unencrypted binary is easily reversible!`, 'warning');
+            logToHackerTerminal(`> Encryption (e.g., AES) would make this unreadable.`, 'warning');
+        }
+
+        // ============================================
+        // 13. EVENT LISTENERS & UI BINDINGS
+        // ============================================
+
+        // Home screen
+        document.getElementById('btn-create-room').addEventListener('click', createRoom);
+        document.getElementById('btn-join-room').addEventListener('click', joinRoom);
+
+        // Role selection
+        document.getElementById('btn-role-alice').addEventListener('click', () => selectRole('alice'));
+        document.getElementById('btn-role-bob').addEventListener('click', () => selectRole('bob'));
+        document.getElementById('btn-role-hacker').addEventListener('click', () => selectRole('hacker'));
+
+        // Alice inputs
+        document.getElementById('alice-text-input').addEventListener('input', updateAliceBinaryPreview);
+        document.getElementById('rep-select').addEventListener('change', (e) => {
+            // Toggle input sections
+            document.getElementById('text-input-section').classList.toggle('hidden', e.target.value !== 'text');
+            document.getElementById('image-input-section').classList.toggle('hidden', e.target.value !== 'image');
+            document.getElementById('sound-input-section').classList.toggle('hidden', e.target.value !== 'sound');
+            updateAliceBinaryPreview();
         });
+        document.getElementById('sound-rate').addEventListener('input', updateAliceBinaryPreview);
+        document.getElementById('sound-depth').addEventListener('input', updateAliceBinaryPreview);
+        document.getElementById('parity-select').addEventListener('change', updateAliceBinaryPreview);
+        document.getElementById('btn-send').addEventListener('click', aliceSendData);
+        document.getElementById('btn-clear-flip').addEventListener('click', () => {
+            STATE.flippedIndex = -1;
+            updateAliceBinaryPreview();
+        });
+
+        // Hacker controls
+        document.getElementById('btn-decrypt').addEventListener('click', decryptPayload);
+        document.getElementById('btn-listen-all').addEventListener('click', () => {
+            STATE.snifferNode = 'all';
+            logToHackerTerminal('> Listening on ALL nodes.');
+        });
+
+        // Back buttons
+        document.querySelectorAll('.btn-back').forEach(btn => {
+            btn.addEventListener('click', () => {
+                // Clean up listeners
+                STATE.unsubscribers.forEach(u => u());
+                STATE.unsubscribers = [];
+                showScreen('home');
+            });
+        });
+
+        // Initial binary preview
+        updateAliceBinaryPreview();
     </script>
 
     <style>
         /* ============================================
-           RESET & BASE
+           CSS RESET & BASE STYLES
            ============================================ */
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #f0f2f5;
-            color: #333;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: #f1f5f9;
+            color: #1e293b;
+            line-height: 1.6;
             min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
         }
-
-        /* Utility: hide screens */
-        .hidden {
-            display: none !important;
-        }
+        .hidden { display: none !important; }
 
         /* ============================================
-           SCREEN 1 — ROLE SELECTION
+           HOME SCREEN — ROOM MANAGEMENT
            ============================================ */
-        #screen-role {
-            text-align: center;
+        #screen-home {
             max-width: 500px;
-            width: 90%;
+            margin: 5vh auto;
+            padding: 2rem;
+            text-align: center;
         }
-
-        #screen-role h1 {
-            font-size: 1.8rem;
+        .game-title {
+            font-size: 2rem;
+            color: #0f172a;
             margin-bottom: 0.5rem;
-            color: #2c3e50;
         }
-
-        #screen-role p.subtitle {
-            color: #666;
+        .subtitle {
+            color: #64748b;
             margin-bottom: 2rem;
         }
-
-        .role-buttons {
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-        }
-
-        .role-btn {
-            padding: 1.5rem 2rem;
-            font-size: 1.2rem;
-            border: none;
-            border-radius: 12px;
-            cursor: pointer;
-            transition: transform 0.15s, box-shadow 0.15s;
-            font-weight: 600;
-        }
-
-        .role-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
-        }
-
-        .role-btn.sender {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-
-        .role-btn.sniffer {
-            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-            color: white;
-        }
-
-        /* ============================================
-           SCREEN 2 — SENDER (ALICE)
-           ============================================ */
-        #screen-sender {
-            max-width: 600px;
-            width: 90%;
+        .room-card {
             background: white;
             padding: 2rem;
             border-radius: 16px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
         }
-
-        #screen-sender h2 {
-            margin-bottom: 1rem;
-            color: #667eea;
-        }
-
-        #screen-sender p.hint {
-            color: #888;
-            font-size: 0.9rem;
-            margin-bottom: 1rem;
-        }
-
-        #sender-input {
-            width: 100%;
-            min-height: 120px;
-            padding: 1rem;
-            font-size: 1rem;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            resize: vertical;
-            font-family: inherit;
-        }
-
-        #sender-input:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .sender-actions {
-            margin-top: 1rem;
+        .room-input-group {
             display: flex;
-            gap: 1rem;
-            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
         }
-
-        #btn-send {
-            padding: 0.8rem 1.5rem;
-            background: #667eea;
-            color: white;
+        input[type="text"] {
+            flex: 1;
+            padding: 0.75rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+        .btn {
+            padding: 0.75rem 1.5rem;
             border: none;
             border-radius: 8px;
             font-size: 1rem;
             cursor: pointer;
             font-weight: 600;
+            transition: all 0.2s;
         }
+        .btn-primary { background: #3b82f6; color: white; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-success { background: #10b981; color: white; }
+        .btn-success:hover { background: #059669; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-        #btn-send:hover {
-            background: #5a6fd6;
+        /* ============================================
+           ROLE SELECTION SCREEN
+           ============================================ */
+        #screen-role {
+            max-width: 600px;
+            margin: 5vh auto;
+            padding: 2rem;
+            text-align: center;
         }
-
-        #back-sender {
-            padding: 0.8rem 1.2rem;
-            background: transparent;
-            color: #666;
-            border: 1px solid #ccc;
-            border-radius: 8px;
+        .role-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+        .role-btn {
+            padding: 1.5rem;
+            font-size: 1.1rem;
+            border: 2px solid #e2e8f0;
+            background: white;
+            border-radius: 12px;
             cursor: pointer;
+            transition: all 0.2s;
+            text-align: left;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
         }
-
-        #sender-status {
-            margin-top: 1rem;
-            font-size: 0.95rem;
-            min-height: 1.5rem;
-            color: #27ae60;
+        .role-btn:hover:not(:disabled) {
+            border-color: #3b82f6;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(59,130,246,0.15);
+        }
+        .role-btn:disabled {
+            background: #f1f5f9;
+            color: #94a3b8;
+            cursor: not-allowed;
         }
 
         /* ============================================
-           SCREEN 3 — SNIFFER (HACKER TERMINAL)
+           ALICE (SENDER) SCREEN
            ============================================ */
-        #screen-sniffer {
-            width: 95%;
-            max-width: 800px;
-            height: 90vh;
+        #screen-alice {
+            max-width: 900px;
+            margin: 2vh auto;
+            padding: 1rem;
+        }
+        .panel {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        .panel h3 {
+            color: #3b82f6;
+            margin-bottom: 1rem;
+            font-size: 1.1rem;
+        }
+        .config-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        .config-group label {
+            display: block;
+            font-size: 0.85rem;
+            color: #64748b;
+            margin-bottom: 0.25rem;
+        }
+        .config-group select {
+            width: 100%;
+            padding: 0.5rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 6px;
+        }
+
+        /* Bitmap Grid */
+        .bitmap-grid {
+            display: grid;
+            grid-template-columns: repeat(8, 30px);
+            gap: 2px;
+            margin: 1rem 0;
+        }
+        .bitmap-cell {
+            width: 30px;
+            height: 30px;
+            background: white;
+            border: 1px solid #cbd5e1;
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+        .bitmap-cell.active {
+            background: #0f172a;
+        }
+
+        /* Binary Display */
+        .binary-display {
+            font-family: 'Courier New', monospace;
+            font-size: 0.95rem;
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 1rem;
+            border-radius: 8px;
+            min-height: 60px;
+            word-break: break-all;
+            line-height: 1.8;
+        }
+        .bit {
+            display: inline-block;
+            padding: 2px 4px;
+            margin: 1px;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .bit:hover {
+            background: #334155;
+        }
+        .bit.flipped {
+            background: #ef4444 !important;
+            color: white;
+            font-weight: bold;
+        }
+
+        /* Sound Controls */
+        .slider-group {
+            margin: 0.5rem 0;
+        }
+        .slider-group input[type="range"] {
+            width: 100%;
+        }
+
+        /* Network Map Container */
+        .network-map {
+            width: 100%;
+            height: 250px;
+            background: #f8fafc;
+            border-radius: 8px;
+            margin-top: 1rem;
+        }
+
+        /* ============================================
+           BOB (RECEIVER) SCREEN
+           ============================================ */
+        #screen-bob {
+            max-width: 900px;
+            margin: 2vh auto;
+            padding: 1rem;
+        }
+        .status-box {
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+            font-weight: 600;
+        }
+        .status-box.success { background: #dcfce7; color: #166534; }
+        .status-box.error { background: #fee2e2; color: #991b1b; }
+        .status-box.info { background: #dbeafe; color: #1e40af; }
+
+        .bob-output {
+            width: 100%;
+            min-height: 100px;
+            padding: 1rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-family: inherit;
+            margin-top: 0.5rem;
+        }
+
+        /* ============================================
+           HACKER (SNIFFER) SCREEN — TERMINAL
+           ============================================ */
+        #screen-hacker {
+            max-width: 1000px;
+            margin: 2vh auto;
+            padding: 1rem;
+            height: 95vh;
             display: flex;
             flex-direction: column;
         }
-
+        .terminal-container {
+            flex: 1;
+            background: #0a0a0a;
+            border-radius: 8px;
+            border: 2px solid #00ff41;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
         .terminal-header {
-            background: #1a1a1a;
+            background: #111;
             color: #00ff41;
-            padding: 1rem;
-            border-radius: 8px 8px 0 0;
+            padding: 0.75rem 1rem;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            border-bottom: 1px solid #00ff41;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-bottom: 2px solid #00ff41;
         }
-
-        .terminal-header h2 {
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 1.1rem;
-        }
-
-        .terminal-controls {
-            display: flex;
-            gap: 0.5rem;
-        }
-
-        .terminal-btn {
-            background: #00ff41;
-            color: #000;
-            border: none;
-            padding: 0.4rem 0.8rem;
-            border-radius: 4px;
-            font-family: 'Courier New', Courier, monospace;
-            font-weight: bold;
-            cursor: pointer;
-            font-size: 0.85rem;
-        }
-
-        .terminal-btn:hover {
-            background: #00cc33;
-        }
-
-        #terminal-output {
+        #hacker-terminal {
             flex: 1;
-            background: #0d0d0d;
-            color: #00ff41;
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 0.95rem;
             padding: 1rem;
             overflow-y: auto;
-            border-radius: 0 0 8px 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
             line-height: 1.6;
         }
-
-        /* Terminal line colouring */
-        .terminal-line {
-            margin-bottom: 0.3rem;
-            word-break: break-all;
-        }
-
-        .terminal-line.system {
-            color: #888;
-        }
-
-        .terminal-line.packet {
-            color: #00ff41;
+        .term-line { margin-bottom: 0.25rem; }
+        .term-line.info { color: #00ff41; }
+        .term-line.error { color: #ff4444; }
+        .term-line.highlight { 
+            color: #ffff00; 
             font-weight: bold;
-        }
-
-        .terminal-line.binary {
-            color: #39ff14;
-        }
-
-        .terminal-line.error {
-            color: #ff4444;
-        }
-
-        .terminal-line.decrypted {
-            color: #ffff00;
-            font-weight: bold;
-            background: rgba(255, 255, 0, 0.1);
-            padding: 0.2rem 0.4rem;
+            background: rgba(255,255,0,0.1);
+            padding: 0.2rem;
             border-radius: 4px;
-            display: inline-block;
-            margin-top: 0.2rem;
+        }
+        .term-line.warning { color: #ffaa00; }
+
+        /* Scrollbar for terminal */
+        #hacker-terminal::-webkit-scrollbar { width: 8px; }
+        #hacker-terminal::-webkit-scrollbar-track { background: #0a0a0a; }
+        #hacker-terminal::-webkit-scrollbar-thumb { background: #00ff41; border-radius: 4px; }
+
+        /* Hacker network map */
+        .hacker-map {
+            height: 200px;
+            background: #0a0a0a;
+            border: 1px solid #00ff41;
+            border-radius: 8px;
+            margin-bottom: 1rem;
         }
 
-        .terminal-line.warning {
-            color: #ffaa00;
+        /* SVG Network Styles */
+        .network-link { opacity: 0.6; }
+        .network-node { cursor: default; }
+        .packet-anim { pointer-events: none; }
+
+        /* Utility */
+        .btn-back {
+            background: transparent;
+            color: #64748b;
+            border: 1px solid #cbd5e1;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-bottom: 1rem;
+        }
+        .btn-back:hover { background: #f1f5f9; }
+
+        .hint-text {
+            font-size: 0.85rem;
+            color: #64748b;
+            margin-top: 0.5rem;
         }
 
-        /* Scrollbar styling for terminal */
-        #terminal-output::-webkit-scrollbar {
-            width: 8px;
-        }
-        #terminal-output::-webkit-scrollbar-track {
-            background: #0d0d0d;
-        }
-        #terminal-output::-webkit-scrollbar-thumb {
-            background: #00ff41;
-            border-radius: 4px;
+        /* Responsive */
+        @media (max-width: 768px) {
+            .config-row { grid-template-columns: 1fr; }
+            .bitmap-grid { grid-template-columns: repeat(8, 25px); }
+            .bitmap-cell { width: 25px; height: 25px; }
         }
     </style>
 </head>
 <body>
 
     <!-- ==========================================
-         SCREEN 1: ROLE SELECTION
+         SCREEN: HOME / ROOM MANAGEMENT
          ========================================== -->
-    <div id="screen-role">
-        <h1>🔐 Data Transmission Lab</h1>
-        <p class="subtitle">Learn how packet sniffing works in real time.</p>
-        <div class="role-buttons">
-            <button class="role-btn sender" id="btn-sender">
-                📤 Join as Sender (Alice)
+    <div id="screen-home">
+        <h1 class="game-title">🌐 IGCSE Data Transmission Lab</h1>
+        <p class="subtitle">Interactive multiplayer game for Computer Science</p>
+        <div class="room-card">
+            <div class="room-input-group">
+                <input type="text" id="room-input" placeholder="Enter 4-digit room code" maxlength="4">
+                <button class="btn btn-primary" id="btn-join-room">Join Room</button>
+            </div>
+            <p style="color:#94a3b8; margin-bottom:1rem;">— or —</p>
+            <button class="btn btn-success" id="btn-create-room" style="width:100%">
+                + Create New Room
             </button>
-            <button class="role-btn sniffer" id="btn-sniffer">
-                👁️ Join as Sniffer (Hacker)
+            <p class="hint-text">
+                Create a room and share the 4-digit code with your students.
+                Each room supports 1 Sender (Alice), 1 Receiver (Bob), and multiple Hackers.
+            </p>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         SCREEN: ROLE SELECTION
+         ========================================== -->
+    <div id="screen-role" class="hidden">
+        <button class="btn-back" onclick="showScreen('home')">← Back to Home</button>
+        <h1 class="game-title">Choose Your Role</h1>
+        <p class="subtitle">Room Code: <strong id="room-code-display">----</strong></p>
+        <div class="role-grid">
+            <button class="role-btn" id="btn-role-alice">
+                <span style="font-size:2rem">📤</span>
+                <div>
+                    <strong>Join as Sender (Alice)</strong><br>
+                    <small style="color:#64748b">Create and transmit data. Limited to 1 per room.</small>
+                </div>
+            </button>
+            <button class="role-btn" id="btn-role-bob">
+                <span style="font-size:2rem">📥</span>
+                <div>
+                    <strong>Join as Receiver (Bob)</strong><br>
+                    <small style="color:#64748b">Reassemble incoming data. Limited to 1 per room.</small>
+                </div>
+            </button>
+            <button class="role-btn" id="btn-role-hacker">
+                <span style="font-size:2rem">👁️</span>
+                <div>
+                    <strong>Join as Sniffer (Hacker)</strong><br>
+                    <small style="color:#64748b">Intercept traffic on the network. Unlimited per room.</small>
+                </div>
             </button>
         </div>
     </div>
 
     <!-- ==========================================
-         SCREEN 2: SENDER VIEW (ALICE)
+         SCREEN: ALICE (SENDER)
          ========================================== -->
-    <div id="screen-sender" class="hidden">
-        <h2>📤 Sender Station — Alice</h2>
-        <p class="hint">Type a message below. It will be converted to 8-bit ASCII binary and transmitted over the wire.</p>
-        <textarea id="sender-input" placeholder="Enter your secret message here..."></textarea>
-        <div class="sender-actions">
-            <button id="btn-send">Send Data</button>
-            <button id="back-sender">← Back</button>
-        </div>
-        <div id="sender-status"></div>
-    </div>
+    <div id="screen-alice" class="hidden">
+        <button class="btn-back" onclick="showScreen('role')">← Change Role</button>
+        <h2 style="margin-bottom:1rem">📤 Sender Station — Alice</h2>
 
-    <!-- ==========================================
-         SCREEN 3: SNIFFER VIEW (HACKER TERMINAL)
-         ========================================== -->
-    <div id="screen-sniffer" class="hidden">
-        <div class="terminal-header">
-            <h2>root@sniffer:~# tcpdump -i eth0 -A</h2>
-            <div class="terminal-controls">
-                <button class="terminal-btn" id="btn-decrypt">🔓 Decrypt Payload</button>
-                <button class="terminal-btn" id="back-sniffer">Exit</button>
+        <!-- Configuration Panel -->
+        <div class="panel">
+            <h3>⚙️ Transmission Configuration</h3>
+            <div class="config-row">
+                <div class="config-group">
+                    <label>Data Representation</label>
+                    <select id="rep-select">
+                        <option value="text">ASCII Text</option>
+                        <option value="image">8×8 Bitmap Image</option>
+                        <option value="sound">Sound Wave (PCM)</option>
+                    </select>
+                </div>
+                <div class="config-group">
+                    <label>Transmission Mode</label>
+                    <select id="mode-select">
+                        <option value="simplex">Simplex (One-way only)</option>
+                        <option value="halfDuplex">Half-Duplex (Two-way, not simultaneous)</option>
+                        <option value="fullDuplex">Full-Duplex (Two-way simultaneous)</option>
+                    </select>
+                </div>
+                <div class="config-group">
+                    <label>Transmission Method</label>
+                    <select id="method-select">
+                        <option value="serial">Serial (One bit at a time)</option>
+                        <option value="parallel">Parallel (Multiple bits simultaneously)</option>
+                    </select>
+                </div>
+                <div class="config-group">
+                    <label>Error Checking</label>
+                    <select id="parity-select">
+                        <option value="none">None</option>
+                        <option value="even">Even Parity</option>
+                        <option value="odd">Odd Parity</option>
+                    </select>
+                </div>
+            </div>
+            <div class="config-row" style="display:flex; align-items:center; gap:1rem;">
+                <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                    <input type="checkbox" id="packet-toggle" style="width:18px; height:18px;">
+                    <span>Enable Packet Switching</span>
+                </label>
+                <span class="hint-text">
+                    When ON, data is split into chunks with headers and routed independently.
+                </span>
             </div>
         </div>
-        <div id="terminal-output"></div>
+
+        <!-- Input Panel -->
+        <div class="panel">
+            <h3>📝 Data Input</h3>
+            
+            <!-- Text Input -->
+            <div id="text-input-section">
+                <label>Type ASCII text to convert to 8-bit binary:</label>
+                <textarea id="alice-text-input" rows="3" style="width:100%; margin-top:0.5rem; padding:0.5rem;" placeholder="Type your message here...">Hello</textarea>
+            </div>
+
+            <!-- Image Input -->
+            <div id="image-input-section" class="hidden">
+                <label>Click pixels to draw an 8×8 bitmap (1 = black, 0 = white):</label>
+                <div class="bitmap-grid" id="bitmap-grid"></div>
+            </div>
+
+            <!-- Sound Input -->
+            <div id="sound-input-section" class="hidden">
+                <label>Simulate PCM Audio Digitisation:</label>
+                <div class="slider-group">
+                    <label>Sample Rate (Hz): <span id="rate-val">8</span></label>
+                    <input type="range" id="sound-rate" min="4" max="16" value="8">
+                </div>
+                <div class="slider-group">
+                    <label>Bit Depth (Resolution): <span id="depth-val">4</span></label>
+                    <input type="range" id="sound-depth" min="2" max="8" value="4">
+                </div>
+                <p id="sound-info" class="hint-text"></p>
+            </div>
+        </div>
+
+        <!-- Binary Preview & Flip -->
+        <div class="panel">
+            <h3>💻 Binary Representation (Live Preview)</h3>
+            <p class="hint-text">
+                Click any bit below to intentionally flip it (simulate transmission error).
+                Red bits are flipped.
+            </p>
+            <div class="binary-display" id="binary-display"></div>
+            <div style="margin-top:0.5rem;">
+                <button class="btn" id="btn-clear-flip" style="background:#64748b; color:white;">Clear Flip</button>
+            </div>
+        </div>
+
+        <!-- Network Map -->
+        <div class="panel">
+            <h3>🗺️ Network Map — Visualising Your Transmission</h3>
+            <div class="network-map" id="alice-network-map"></div>
+            <p class="hint-text">
+                <strong>Simplex:</strong> One arrow Alice→Bob. 
+                <strong>Half-Duplex:</strong> Shared path, alternating direction. 
+                <strong>Full-Duplex:</strong> Two independent paths.
+            </p>
+        </div>
+
+        <!-- Actions -->
+        <div class="panel" style="display:flex; gap:1rem; align-items:center;">
+            <button class="btn btn-primary" id="btn-send" style="font-size:1.1rem; padding:1rem 2rem;">
+                📡 Send Data
+            </button>
+            <span id="alice-status" style="color:#059669; font-weight:600;"></span>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         SCREEN: BOB (RECEIVER)
+         ========================================== -->
+    <div id="screen-bob" class="hidden">
+        <button class="btn-back" onclick="showScreen('role')">← Change Role</button>
+        <h2 style="margin-bottom:1rem">📥 Receiver Station — Bob</h2>
+
+        <div class="panel">
+            <h3>📊 Status Panel</h3>
+            <div id="bob-status" class="status-box info">Waiting for connection...</div>
+            <div id="parity-indicator" class="status-box info" style="margin-top:0.5rem;">
+                Parity Check: Waiting for data...
+            </div>
+        </div>
+
+        <div class="panel">
+            <h3>🗺️ Network Map — Packet Traversal</h3>
+            <div class="network-map" id="bob-network-map"></div>
+            <p class="hint-text">
+                Watch packets traverse router nodes in real-time. 
+                With <strong>packet switching</strong>, different packets may take different paths!
+            </p>
+        </div>
+
+        <div class="panel">
+            <h3>🔄 Recomposed Data</h3>
+            <label>Reconstructed Text:</label>
+            <textarea class="bob-output" id="bob-text-output" readonly placeholder="Incoming text will appear here..."></textarea>
+            
+            <label style="display:block; margin-top:1rem;">Reconstructed Image (if 64-bit payload):</label>
+            <div id="bob-image-output" style="margin-top:0.5rem;"></div>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         SCREEN: HACKER (SNIFFER)
+         ========================================== -->
+    <div id="screen-hacker" class="hidden">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <h2 style="color:#00ff41; font-family:'Courier New',monospace;">👁️ Sniffer Terminal — Hacker</h2>
+            <button class="btn-back" onclick="showScreen('role')">← Change Role</button>
+        </div>
+
+        <div class="hacker-map" id="hacker-network-map"></div>
+        <p class="hint-text" style="color:#94a3b8; margin-bottom:1rem;">
+            Tap any node above to filter intercepted traffic. Yellow = active tap.
+        </p>
+
+        <div class="terminal-container">
+            <div class="terminal-header">
+                <span>root@sniffer:~# tcpdump -i eth0 -A -l</span>
+                <div>
+                    <button class="btn" id="btn-listen-all" style="background:#00ff41; color:#000; padding:0.3rem 0.6rem; font-size:0.8rem; margin-right:0.5rem;">
+                        Listen All
+                    </button>
+                    <button class="btn" id="btn-decrypt" style="background:#ffff00; color:#000; padding:0.3rem 0.6rem; font-size:0.8rem;">
+                        🔓 Decrypt Payload
+                    </button>
+                </div>
+            </div>
+            <div id="hacker-terminal">
+                <div class="term-line info">> Initialising packet sniffer...</div>
+                <div class="term-line info">> Firestore listener active on room...</div>
+            </div>
+        </div>
     </div>
 
 </body>
