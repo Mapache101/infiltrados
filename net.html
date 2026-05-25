@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Packet Sniffer — IGCSE Data Transmission Lab</title>
+    <!-- Firebase v9 Modular SDK (CDN) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import {
+            getFirestore,
+            collection,
+            addDoc,
+            onSnapshot,
+            serverTimestamp,
+            query,
+            orderBy
+        } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+
+        // ============================================
+        // 1. FIREBASE CONFIGURATION
+        // ============================================
+        const firebaseConfig = typeof __firebase_config !== 'undefined'
+            ? JSON.parse(__firebase_config)
+            : {
+                // Fallback config (user's original)
+                apiKey: "AIzaSyAG6v0TT9miam83wXOB4aqdqD6qbc5GhPo",
+                authDomain: "infiltrados-game.firebaseapp.com",
+                projectId: "infiltrados-game",
+                storageBucket: "infiltrados-game.firebasestorage.app",
+                messagingSenderId: "742547669169",
+                appId: "1:742547669169:web:68ee3277c5fb077647a290"
+            };
+
+        // Initialise Firebase App and Firestore database
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Reference to the shared collection
+        const payloadsRef = collection(db, "raw_payloads");
+
+        // ============================================
+        // 2. SCREEN NAVIGATION
+        // ============================================
+        const screenRole = document.getElementById('screen-role');
+        const screenSender = document.getElementById('screen-sender');
+        const screenSniffer = document.getElementById('screen-sniffer');
+
+        function showScreen(screen) {
+            // Hide all screens
+            [screenRole, screenSender, screenSniffer].forEach(s => s.classList.add('hidden'));
+            // Show requested screen
+            screen.classList.remove('hidden');
+        }
+
+        // Role-selection buttons
+        document.getElementById('btn-sender').addEventListener('click', () => showScreen(screenSender));
+        document.getElementById('btn-sniffer').addEventListener('click', () => {
+            showScreen(screenSniffer);
+            startSniffer(); // Begin real-time listener
+        });
+        document.getElementById('back-sender').addEventListener('click', () => showScreen(screenRole));
+        document.getElementById('back-sniffer').addEventListener('click', () => showScreen(screenRole));
+
+        // ============================================
+        // 3. SENDER LOGIC  (Alice)
+        // ============================================
+
+        /**
+         * Converts a plain-text string into an ASCII binary string.
+         * Each character -> 8-bit byte, padded with leading zeros.
+         * Example: "A" (ASCII 65) -> "01000001"
+         */
+        function textToBinary(text) {
+            let binary = "";
+            for (let i = 0; i < text.length; i++) {
+                // Get ASCII code
+                const ascii = text.charCodeAt(i);
+                // Convert to binary and pad to 8 bits
+                const byte = ascii.toString(2).padStart(8, '0');
+                binary += byte;
+            }
+            return binary;
+        }
+
+        const senderTextarea = document.getElementById('sender-input');
+        const senderStatus = document.getElementById('sender-status');
+
+        document.getElementById('btn-send').addEventListener('click', async () => {
+            const rawText = senderTextarea.value.trim();
+            if (!rawText) {
+                senderStatus.textContent = "⚠️ Please type a message first.";
+                return;
+            }
+
+            // Convert message to raw binary payload
+            const binaryPayload = textToBinary(rawText);
+
+            try {
+                // Push to Firestore so the sniffer can intercept it
+                await addDoc(payloadsRef, {
+                    payload: binaryPayload,
+                    timestamp: serverTimestamp()
+                });
+
+                senderStatus.textContent = `✅ Sent! (${binaryPayload.length} bits)`;
+                senderTextarea.value = ""; // Clear input
+            } catch (err) {
+                console.error("Firestore write failed:", err);
+                senderStatus.textContent = "❌ Error sending data. Check console.";
+            }
+        });
+
+        // ============================================
+        // 4. SNIFFER LOGIC  (Hacker)
+        // ============================================
+        const terminalOutput = document.getElementById('terminal-output');
+        const decryptBtn = document.getElementById('btn-decrypt');
+        let latestBinary = ""; // Holds the most recently intercepted payload
+
+        /**
+         * Converts an ASCII binary string back to readable text.
+         * Splits into 8-bit chunks, parses each to a character.
+         */
+        function binaryToText(binary) {
+            let text = "";
+            // Process in chunks of 8
+            for (let i = 0; i < binary.length; i += 8) {
+                const byte = binary.slice(i, i + 8);
+                const ascii = parseInt(byte, 2);
+                text += String.fromCharCode(ascii);
+            }
+            return text;
+        }
+
+        /**
+         * Appends a line to the terminal with a timestamp.
+         */
+        function logToTerminal(line, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `terminal-line ${type}`;
+            const time = new Date().toLocaleTimeString('en-GB', { hour12: false });
+            entry.textContent = `[${time}] ${line}`;
+            terminalOutput.appendChild(entry);
+            // Auto-scroll to bottom
+            terminalOutput.scrollTop = terminalOutput.scrollHeight;
+        }
+
+        let unsubscribeSniffer = null;
+
+        function startSniffer() {
+            // If already listening, stop previous listener
+            if (unsubscribeSniffer) unsubscribeSniffer();
+
+            logToTerminal("Initializing packet sniffer...", "system");
+            logToTerminal("Listening on collection: raw_payloads", "system");
+            logToTerminal("Waiting for incoming data...", "system");
+
+            // Real-time Firestore listener
+            // Ordered by timestamp so newest packets appear last
+            const q = query(payloadsRef, orderBy("timestamp", "asc"));
+
+            unsubscribeSniffer = onSnapshot(q, (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    if (change.type === "added") {
+                        const data = change.doc.data();
+                        const binary = data.payload || "";
+                        latestBinary = binary; // Store for decryption
+
+                        // Visual feedback: simulate packet interception
+                        logToTerminal(`INTERCEPTED PACKET (${binary.length} bits)`, "packet");
+                        logToTerminal(`RAW BINARY: ${binary}`, "binary");
+                        logToTerminal("---", "system");
+                    }
+                });
+            }, (error) => {
+                logToTerminal(`ERROR: ${error.message}`, "error");
+                console.error("Sniffer listener error:", error);
+            });
+        }
+
+        // Decrypt button: prove that raw binary is easily readable
+        decryptBtn.addEventListener('click', () => {
+            if (!latestBinary) {
+                logToTerminal("No payload intercepted yet.", "error");
+                return;
+            }
+            const decrypted = binaryToText(latestBinary);
+            logToTerminal(`🔓 DECRYPTED PAYLOAD: "${decrypted}"`, "decrypted");
+            logToTerminal("⚠️  Lesson: Unencrypted binary is trivial to read!", "warning");
+        });
+    </script>
+
+    <style>
+        /* ============================================
+           RESET & BASE
+           ============================================ */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f0f2f5;
+            color: #333;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Utility: hide screens */
+        .hidden {
+            display: none !important;
+        }
+
+        /* ============================================
+           SCREEN 1 — ROLE SELECTION
+           ============================================ */
+        #screen-role {
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+        }
+
+        #screen-role h1 {
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
+            color: #2c3e50;
+        }
+
+        #screen-role p.subtitle {
+            color: #666;
+            margin-bottom: 2rem;
+        }
+
+        .role-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .role-btn {
+            padding: 1.5rem 2rem;
+            font-size: 1.2rem;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s;
+            font-weight: 600;
+        }
+
+        .role-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+        }
+
+        .role-btn.sender {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .role-btn.sniffer {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+        }
+
+        /* ============================================
+           SCREEN 2 — SENDER (ALICE)
+           ============================================ */
+        #screen-sender {
+            max-width: 600px;
+            width: 90%;
+            background: white;
+            padding: 2rem;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+        }
+
+        #screen-sender h2 {
+            margin-bottom: 1rem;
+            color: #667eea;
+        }
+
+        #screen-sender p.hint {
+            color: #888;
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+        }
+
+        #sender-input {
+            width: 100%;
+            min-height: 120px;
+            padding: 1rem;
+            font-size: 1rem;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            resize: vertical;
+            font-family: inherit;
+        }
+
+        #sender-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .sender-actions {
+            margin-top: 1rem;
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        #btn-send {
+            padding: 0.8rem 1.5rem;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        #btn-send:hover {
+            background: #5a6fd6;
+        }
+
+        #back-sender {
+            padding: 0.8rem 1.2rem;
+            background: transparent;
+            color: #666;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        #sender-status {
+            margin-top: 1rem;
+            font-size: 0.95rem;
+            min-height: 1.5rem;
+            color: #27ae60;
+        }
+
+        /* ============================================
+           SCREEN 3 — SNIFFER (HACKER TERMINAL)
+           ============================================ */
+        #screen-sniffer {
+            width: 95%;
+            max-width: 800px;
+            height: 90vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .terminal-header {
+            background: #1a1a1a;
+            color: #00ff41;
+            padding: 1rem;
+            border-radius: 8px 8px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #00ff41;
+        }
+
+        .terminal-header h2 {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 1.1rem;
+        }
+
+        .terminal-controls {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .terminal-btn {
+            background: #00ff41;
+            color: #000;
+            border: none;
+            padding: 0.4rem 0.8rem;
+            border-radius: 4px;
+            font-family: 'Courier New', Courier, monospace;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+
+        .terminal-btn:hover {
+            background: #00cc33;
+        }
+
+        #terminal-output {
+            flex: 1;
+            background: #0d0d0d;
+            color: #00ff41;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.95rem;
+            padding: 1rem;
+            overflow-y: auto;
+            border-radius: 0 0 8px 8px;
+            line-height: 1.6;
+        }
+
+        /* Terminal line colouring */
+        .terminal-line {
+            margin-bottom: 0.3rem;
+            word-break: break-all;
+        }
+
+        .terminal-line.system {
+            color: #888;
+        }
+
+        .terminal-line.packet {
+            color: #00ff41;
+            font-weight: bold;
+        }
+
+        .terminal-line.binary {
+            color: #39ff14;
+        }
+
+        .terminal-line.error {
+            color: #ff4444;
+        }
+
+        .terminal-line.decrypted {
+            color: #ffff00;
+            font-weight: bold;
+            background: rgba(255, 255, 0, 0.1);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            display: inline-block;
+            margin-top: 0.2rem;
+        }
+
+        .terminal-line.warning {
+            color: #ffaa00;
+        }
+
+        /* Scrollbar styling for terminal */
+        #terminal-output::-webkit-scrollbar {
+            width: 8px;
+        }
+        #terminal-output::-webkit-scrollbar-track {
+            background: #0d0d0d;
+        }
+        #terminal-output::-webkit-scrollbar-thumb {
+            background: #00ff41;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ==========================================
+         SCREEN 1: ROLE SELECTION
+         ========================================== -->
+    <div id="screen-role">
+        <h1>🔐 Data Transmission Lab</h1>
+        <p class="subtitle">Learn how packet sniffing works in real time.</p>
+        <div class="role-buttons">
+            <button class="role-btn sender" id="btn-sender">
+                📤 Join as Sender (Alice)
+            </button>
+            <button class="role-btn sniffer" id="btn-sniffer">
+                👁️ Join as Sniffer (Hacker)
+            </button>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         SCREEN 2: SENDER VIEW (ALICE)
+         ========================================== -->
+    <div id="screen-sender" class="hidden">
+        <h2>📤 Sender Station — Alice</h2>
+        <p class="hint">Type a message below. It will be converted to 8-bit ASCII binary and transmitted over the wire.</p>
+        <textarea id="sender-input" placeholder="Enter your secret message here..."></textarea>
+        <div class="sender-actions">
+            <button id="btn-send">Send Data</button>
+            <button id="back-sender">← Back</button>
+        </div>
+        <div id="sender-status"></div>
+    </div>
+
+    <!-- ==========================================
+         SCREEN 3: SNIFFER VIEW (HACKER TERMINAL)
+         ========================================== -->
+    <div id="screen-sniffer" class="hidden">
+        <div class="terminal-header">
+            <h2>root@sniffer:~# tcpdump -i eth0 -A</h2>
+            <div class="terminal-controls">
+                <button class="terminal-btn" id="btn-decrypt">🔓 Decrypt Payload</button>
+                <button class="terminal-btn" id="back-sniffer">Exit</button>
+            </div>
+        </div>
+        <div id="terminal-output"></div>
+    </div>
+
+</body>
+</html>
